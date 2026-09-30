@@ -6,11 +6,25 @@ from pathlib import Path
 
 from .campaign import execute_campaign
 from .environment import run_doctor
-from .predictor import calibrate_phase
+from .predictor import PhaseModel, calibrate_phase
 from .probe import run_probe, summarize
 from .relay import run_relay
+from .replay import replay_speech
 from .report import build_report
 from .speech import speech_loop
+
+
+POLICIES = ["plain", "always-fec", "random-fec", "predictive-fec"]
+
+
+def _add_policy_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--policy", choices=POLICIES, required=True)
+    p.add_argument("--predictor", type=Path)
+    p.add_argument("--bitrate", type=int, default=24000)
+    p.add_argument("--expected-loss", type=int, default=20)
+    p.add_argument("--random-duty-cycle", type=float, default=0.1)
+    p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--packet-log", type=Path)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -41,13 +55,13 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--input", type=Path, required=True)
     s.add_argument("--output", type=Path, required=True)
     s.add_argument("--target", required=True)
-    s.add_argument("--policy", choices=["plain", "always-fec", "random-fec", "predictive-fec"], required=True)
-    s.add_argument("--predictor", type=Path)
-    s.add_argument("--bitrate", type=int, default=24000)
-    s.add_argument("--expected-loss", type=int, default=20)
-    s.add_argument("--random-duty-cycle", type=float, default=0.1)
-    s.add_argument("--seed", type=int, default=1)
-    s.add_argument("--packet-log", type=Path)
+    _add_policy_args(s)
+
+    replay = sub.add_parser("replay-speech")
+    replay.add_argument("--input", type=Path, required=True)
+    replay.add_argument("--output", type=Path, required=True)
+    replay.add_argument("--trace", type=Path, required=True)
+    _add_policy_args(replay)
 
     run = sub.add_parser("run")
     run.add_argument("campaign", type=Path)
@@ -59,6 +73,10 @@ def _parser() -> argparse.ArgumentParser:
     rep.add_argument("run_dir", type=Path)
 
     return p
+
+
+def _predictor(path: Path | None) -> PhaseModel | None:
+    return PhaseModel.load(path) if path else None
 
 
 def main() -> None:
@@ -85,21 +103,33 @@ def main() -> None:
         return
 
     if args.cmd == "speech-loop":
-        predictor = None
-        if args.predictor:
-            from .predictor import PhaseModel
-            predictor = PhaseModel.load(args.predictor)
         result = speech_loop(
             args.input,
             args.output,
             args.target,
             args.policy,
-            predictor,
+            _predictor(args.predictor),
             args.bitrate,
             args.expected_loss,
             args.random_duty_cycle,
             args.seed,
             args.packet_log,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "replay-speech":
+        result = replay_speech(
+            input_wav=args.input,
+            output_wav=args.output,
+            trace=args.trace,
+            policy=args.policy,
+            predictor=_predictor(args.predictor),
+            bitrate=args.bitrate,
+            expected_loss_percent=args.expected_loss,
+            random_duty_cycle=args.random_duty_cycle,
+            seed=args.seed,
+            packet_log=args.packet_log,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
