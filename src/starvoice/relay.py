@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import socket
 import time
 from pathlib import Path
@@ -36,13 +35,15 @@ def run_relay(bind: str, port: int, log_path: Path | None = None) -> None:
                     writer.write(record)
             except ValueError:
                 if writer:
-                    writer.write({
-                        "event": "relay_invalid",
-                        "utc": utc_now_iso(),
-                        "recv_ns": recv_ns,
-                        "peer_ip": addr[0],
-                        "bytes": len(data),
-                    })
+                    writer.write(
+                        {
+                            "event": "relay_invalid",
+                            "utc": utc_now_iso(),
+                            "recv_ns": recv_ns,
+                            "peer_ip": addr[0],
+                            "bytes": len(data),
+                        }
+                    )
             sock.sendto(data, addr)
     except KeyboardInterrupt:
         pass
