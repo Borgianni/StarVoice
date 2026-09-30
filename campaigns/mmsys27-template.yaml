@@ -1,0 +1,36 @@
+schema_version: 1
+name: mmsys27-main
+seed: 20261101
+repeats: 8
+
+# Set after an independent calibration period; never fit on test-day outcomes.
+predictor_model: ../models/frozen-phase-model.json
+
+conditions:
+  - name: plain
+    kind: speech
+    input_wav: ../workloads/test-clean/sample.wav
+    policy: plain
+    bitrate: 24000
+
+  - name: always-fec
+    kind: speech
+    input_wav: ../workloads/test-clean/sample.wav
+    policy: always-fec
+    bitrate: 24000
+    expected_loss_percent: 20
+
+  - name: random-fec-equal-budget
+    kind: speech
+    input_wav: ../workloads/test-clean/sample.wav
+    policy: random-fec
+    bitrate: 24000
+    expected_loss_percent: 20
+    random_duty_cycle: 0.08
+
+  - name: predictive-fec
+    kind: speech
+    input_wav: ../workloads/test-clean/sample.wav
+    policy: predictive-fec
+    bitrate: 24000
+    expected_loss_percent: 20
