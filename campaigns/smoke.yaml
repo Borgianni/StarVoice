@@ -1,0 +1,15 @@
+schema_version: 1
+name: smoke
+seed: 20260930
+repeats: 2
+conditions:
+  - name: probe-20ms
+    kind: probe
+    duration_s: 10
+    interval_ms: 20
+    timeout_ms: 1000
+  - name: probe-50ms
+    kind: probe
+    duration_s: 10
+    interval_ms: 50
+    timeout_ms: 1000
