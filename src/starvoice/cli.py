@@ -7,6 +7,7 @@ from pathlib import Path
 from .campaign import execute_campaign
 from .dataset import prepare_librispeech
 from .environment import run_doctor
+from .evaluation import run_codec_benchmark
 from .predictor import PhaseModel, calibrate_phase
 from .probe import run_probe, summarize
 from .relay import run_relay
@@ -67,6 +68,18 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--target", required=True)
     _add_policy_args(s)
 
+    bench = sub.add_parser("benchmark-codec")
+    bench.add_argument("--manifest", type=Path, required=True)
+    bench.add_argument("--calibration-trace", type=Path, required=True)
+    bench.add_argument("--validation-trace", type=Path, action="append", required=True)
+    bench.add_argument("--output", type=Path, required=True)
+    bench.add_argument("--seed", type=int, default=2027)
+    bench.add_argument("--warmup-s", type=float, default=120.0)
+    bench.add_argument("--threshold-ms", type=float, default=50.0)
+    bench.add_argument("--risk-half-width-s", type=float, default=0.2)
+    bench.add_argument("--bitrate", type=int, default=24000)
+    bench.add_argument("--expected-loss", type=int, default=20)
+
     replay = sub.add_parser("replay-speech")
     replay.add_argument("--input", type=Path, required=True)
     replay.add_argument("--output", type=Path, required=True)
@@ -119,6 +132,22 @@ def main() -> None:
             target_minutes=args.target_minutes,
             seed=args.seed,
             max_per_speaker=args.max_per_speaker,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "benchmark-codec":
+        result = run_codec_benchmark(
+            manifest=args.manifest,
+            calibration_trace=args.calibration_trace,
+            validation_traces=args.validation_trace,
+            output=args.output,
+            seed=args.seed,
+            warmup_s=args.warmup_s,
+            threshold_ms=args.threshold_ms,
+            risk_half_width_s=args.risk_half_width_s,
+            bitrate=args.bitrate,
+            expected_loss_percent=args.expected_loss,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
