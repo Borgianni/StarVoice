@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .campaign import execute_campaign
+from .dataset import prepare_librispeech
 from .environment import run_doctor
 from .predictor import PhaseModel, calibrate_phase
 from .probe import run_probe, summarize
@@ -50,6 +51,15 @@ def _parser() -> argparse.ArgumentParser:
     c.add_argument("--period", type=float, default=15.0)
     c.add_argument("--risk-half-width", type=float, default=0.35)
     c.add_argument("--output", type=Path, default=Path("phase-model.json"))
+
+    ds = sub.add_parser("dataset")
+    ds_sub = ds.add_subparsers(dest="dataset_cmd", required=True)
+    lp = ds_sub.add_parser("prepare-librispeech")
+    lp.add_argument("--root", type=Path, required=True)
+    lp.add_argument("--output", type=Path, required=True)
+    lp.add_argument("--target-minutes", type=float, default=30.0)
+    lp.add_argument("--seed", type=int, default=2027)
+    lp.add_argument("--max-per-speaker", type=int, default=20)
 
     s = sub.add_parser("speech-loop")
     s.add_argument("--input", type=Path, required=True)
@@ -100,6 +110,17 @@ def main() -> None:
         model = calibrate_phase(args.trace, args.period, risk_half_width_s=args.risk_half_width)
         model.save(args.output)
         print(json.dumps(model.__dict__, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "dataset" and args.dataset_cmd == "prepare-librispeech":
+        result = prepare_librispeech(
+            root=args.root,
+            output=args.output,
+            target_minutes=args.target_minutes,
+            seed=args.seed,
+            max_per_speaker=args.max_per_speaker,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
         return
 
     if args.cmd == "speech-loop":
