@@ -146,9 +146,11 @@ def speech_loop(
                     ok = True
                 else:
                     lost += 1
-                    # If next packet arrived, ask Opus to recover current frame from its in-band FEC.
+                    # Opus in-band FEC for frame N is carried in packet N+1.
                     next_payload = received.get(seq + 1)
-                    if next_payload is not None:
+                    next_meta = encoded.get(seq + 1)
+                    next_has_fec = bool(next_meta and next_meta[2])
+                    if next_payload is not None and next_has_fec:
                         try:
                             pcm = dec.decode(next_payload, fec=True)
                             recovered_fec += 1
