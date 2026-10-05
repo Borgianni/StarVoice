@@ -48,6 +48,7 @@ def run_codec_benchmark(
     risk_half_width_s: float = 0.2,
     bitrate: int = 24000,
     expected_loss_percent: int = 20,
+    limit: int | None = None,
 ) -> dict:
     """Run paired Opus/FEC replay over a frozen speech corpus and validation traces.
 
