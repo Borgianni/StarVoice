@@ -67,6 +67,10 @@ def run_codec_benchmark(
     corpus = _read_jsonl(manifest)
     if not corpus:
         raise ValueError("empty corpus manifest")
+    if limit is not None:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        corpus = corpus[:limit]
 
     period_s, coherence = search_period(
         calibration_trace,
