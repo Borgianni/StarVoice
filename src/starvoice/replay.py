@@ -6,7 +6,7 @@ import random
 import wave
 from pathlib import Path
 
-from .opus import OpusConfig, OpusDecoder, OpusEncoder
+from .opus import OpusConfig, OpusDecoder, OpusEncoder, packet_has_fec
 from .predictor import PhaseModel
 from .speech import _policy_fec
 from .storage import JsonlWriter
@@ -124,8 +124,13 @@ def replay_speech(
                 else:
                     lost += 1
                     next_payload = received[i + 1] if i + 1 < len(received) else None
-                    next_has_fec = i + 1 < len(fec_flags) and fec_flags[i + 1]
-                    if next_payload is not None and next_has_fec:
+                    next_has_fec = (
+                        next_payload is not None
+                        and i + 1 < len(fec_flags)
+                        and fec_flags[i + 1]
+                        and packet_has_fec(next_payload)
+                    )
+                    if next_has_fec:
                         try:
                             pcm = dec.decode(next_payload, fec=True)
                             recovered += 1
