@@ -16,6 +16,7 @@ def _trace_rows(path: Path) -> list[dict]:
     rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
     if not rows:
         raise ValueError("empty trace")
+    rows.sort(key=lambda r: int(r["send_ns"]))
     return rows
 
 
@@ -41,16 +42,13 @@ def replay_speech(
     random_duty_cycle: float = 0.1,
     seed: int = 1,
     packet_log: Path | None = None,
+    trace_offset_frames: int = 0,
 ) -> dict:
     """Replay one recorded loss pattern against one speech-protection policy.
 
-    This isolates policy effects: multiple policies can be evaluated against the
-    same recorded loss events. The replay currently models loss only; RTT/jitter
-    are retained in the source trace but are not converted to a playout model.
-
-    For random-fec, the requested duty cycle is enforced as an exact frame count
-    (up to rounding) rather than as a Bernoulli probability. This supports
-    equal-budget comparisons against predictive protection.
+    The same trace offset can be reused across policies for paired comparisons.
+    The replay currently models loss only; RTT/jitter are retained in the source
+    trace but are not converted to a playout model.
     """
     rows = _trace_rows(trace)
     cfg = OpusConfig(bitrate=bitrate)
@@ -59,11 +57,13 @@ def replay_speech(
     rng = random.Random(seed)
     writer = JsonlWriter(packet_log) if packet_log else None
     frame_bytes = cfg.frame_samples * cfg.channels * 2
+    trace_offset_frames %= len(rows)
 
     encoded: list[bytes] = []
     fec_flags: list[bool] = []
     risks: list[float] = []
     send_times: list[int] = []
+    trace_indices: list[int] = []
 
     try:
         with wave.open(str(input_wav), "rb") as w:
@@ -88,7 +88,8 @@ def replay_speech(
                     break
                 if len(pcm) < frame_bytes:
                     pcm += b"\0" * (frame_bytes - len(pcm))
-                trace_row = rows[i % len(rows)]
+                trace_index = (trace_offset_frames + i) % len(rows)
+                trace_row = rows[trace_index]
                 send_ns = int(trace_row.get("send_ns", i * cfg.frame_ms * 1_000_000))
                 risk = predictor.risk(send_ns) if predictor else 0.0
 
@@ -102,11 +103,12 @@ def replay_speech(
                 fec_flags.append(fec)
                 risks.append(risk)
                 send_times.append(send_ns)
+                trace_indices.append(trace_index)
                 i += 1
 
         received: list[bytes | None] = []
         for i, payload in enumerate(encoded):
-            trace_row = rows[i % len(rows)]
+            trace_row = rows[trace_indices[i]]
             received.append(None if bool(trace_row.get("lost")) else payload)
 
         recovered = 0
@@ -138,7 +140,7 @@ def replay_speech(
                         {
                             "sequence": i,
                             "send_ns": send_times[i],
-                            "source_trace_index": i % len(rows),
+                            "source_trace_index": trace_indices[i],
                             "lost": payload is None,
                             "recovered_fec": recovered_here,
                             "fec_enabled": fec_flags[i],
@@ -151,15 +153,17 @@ def replay_speech(
                         }
                     )
 
+        protected = sum(fec_flags)
         return {
             "frames": len(encoded),
             "source_trace": str(trace),
+            "trace_offset_frames": trace_offset_frames,
             "policy": policy,
             "network_lost_frames": lost,
             "network_loss_rate": lost / len(encoded) if encoded else None,
             "fec_recovered_frames": recovered,
-            "fec_duty_cycle": sum(fec_flags) / len(fec_flags) if fec_flags else None,
-            "fec_protected_frames": sum(fec_flags),
+            "fec_duty_cycle": protected / len(fec_flags) if fec_flags else None,
+            "fec_protected_frames": protected,
             "encoded_bytes": sum(map(len, encoded)),
             "replay_models": ["loss"],
         }
