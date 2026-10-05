@@ -34,6 +34,8 @@ def _lib() -> ctypes.CDLL:
         ctypes.POINTER(ctypes.c_ubyte),
         ctypes.c_int32,
     ]
+    lib.opus_packet_has_lbrr.restype = ctypes.c_int
+    lib.opus_packet_has_lbrr.argtypes = [ctypes.POINTER(ctypes.c_ubyte), ctypes.c_int32]
     lib.opus_decoder_create.restype = ctypes.c_void_p
     lib.opus_decoder_create.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
     lib.opus_decoder_destroy.argtypes = [ctypes.c_void_p]
@@ -105,6 +107,17 @@ class OpusEncoder:
         if self.ptr:
             self.lib.opus_encoder_destroy(self.ptr)
             self.ptr = None
+
+
+def packet_has_fec(payload: bytes) -> bool:
+    if not payload:
+        return False
+    lib = _lib()
+    data = (ctypes.c_ubyte * len(payload)).from_buffer_copy(payload)
+    rc = lib.opus_packet_has_lbrr(data, len(payload))
+    if rc < 0:
+        raise RuntimeError(f"opus_packet_has_lbrr failed: {rc}")
+    return bool(rc)
 
 
 class OpusDecoder:
