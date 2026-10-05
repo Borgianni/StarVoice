@@ -79,6 +79,7 @@ def _parser() -> argparse.ArgumentParser:
     bench.add_argument("--risk-half-width-s", type=float, default=0.2)
     bench.add_argument("--bitrate", type=int, default=24000)
     bench.add_argument("--expected-loss", type=int, default=20)
+    bench.add_argument("--limit", type=int)
 
     replay = sub.add_parser("replay-speech")
     replay.add_argument("--input", type=Path, required=True)
@@ -148,6 +149,7 @@ def main() -> None:
             risk_half_width_s=args.risk_half_width_s,
             bitrate=args.bitrate,
             expected_loss_percent=args.expected_loss,
+            limit=args.limit,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
