@@ -8,6 +8,7 @@ from .campaign import execute_campaign
 from .dataset import prepare_librispeech
 from .environment import run_doctor
 from .evaluation import run_codec_benchmark
+from .montecarlo import run_random_fec_monte_carlo
 from .predictor import PhaseModel, calibrate_phase
 from .probe import run_probe, summarize
 from .relay import run_relay
@@ -81,6 +82,15 @@ def _parser() -> argparse.ArgumentParser:
     bench.add_argument("--expected-loss", type=int, default=20)
     bench.add_argument("--limit", type=int)
 
+    mc = sub.add_parser("monte-carlo-random-fec")
+    mc.add_argument("--benchmark-results", type=Path, required=True)
+    mc.add_argument("--manifest", type=Path, required=True)
+    mc.add_argument("--output", type=Path, required=True)
+    mc.add_argument("--repetitions", type=int, default=100)
+    mc.add_argument("--seed", type=int, default=2027)
+    mc.add_argument("--bitrate", type=int, default=24000)
+    mc.add_argument("--expected-loss", type=int, default=20)
+
     replay = sub.add_parser("replay-speech")
     replay.add_argument("--input", type=Path, required=True)
     replay.add_argument("--output", type=Path, required=True)
@@ -150,6 +160,19 @@ def main() -> None:
             bitrate=args.bitrate,
             expected_loss_percent=args.expected_loss,
             limit=args.limit,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "monte-carlo-random-fec":
+        result = run_random_fec_monte_carlo(
+            benchmark_results=args.benchmark_results,
+            manifest=args.manifest,
+            output=args.output,
+            repetitions=args.repetitions,
+            seed=args.seed,
+            bitrate=args.bitrate,
+            expected_loss_percent=args.expected_loss,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
