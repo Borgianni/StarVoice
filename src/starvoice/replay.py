@@ -86,8 +86,6 @@ def replay_fixed_schedule_recovery_only(
                 continue
             if bool(rows[trace_indices[i + 1]].get("lost")):
                 continue
-            if (i + 1) not in schedule:
-                continue
             if packet_has_fec(encoded[i + 1]):
                 lbrr_present += 1
                 recovered += 1
@@ -172,8 +170,6 @@ def replay_random_recovery_only(
                 continue
             next_lost = bool(rows[trace_indices[i + 1]].get("lost"))
             if next_lost:
-                continue
-            if (i + 1) not in schedule:
                 continue
             if packet_has_fec(encoded[i + 1]):
                 recovered += 1
@@ -313,8 +309,6 @@ def replay_speech(
                     next_payload = received[i + 1] if i + 1 < len(received) else None
                     next_has_fec = (
                         next_payload is not None
-                        and i + 1 < len(fec_flags)
-                        and fec_flags[i + 1]
                         and packet_has_fec(next_payload)
                     )
                     if next_has_fec:
@@ -336,8 +330,14 @@ def replay_speech(
                             "lost": payload is None,
                             "recovered_fec": recovered_here,
                             "fec_enabled": fec_flags[i],
+                            "packet_has_lbrr": packet_has_fec(encoded[i]),
                             "next_packet_fec_enabled": (
                                 fec_flags[i + 1] if i + 1 < len(fec_flags) else False
+                            ),
+                            "next_packet_has_lbrr": (
+                                packet_has_fec(encoded[i + 1])
+                                if i + 1 < len(encoded)
+                                else False
                             ),
                             "risk": risks[i],
                             "encoded_bytes": len(encoded[i]),
