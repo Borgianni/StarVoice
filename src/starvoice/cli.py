@@ -14,6 +14,7 @@ from .foresight import run_foresight_analysis
 from .evaluation import run_codec_benchmark
 from .montecarlo import run_random_fec_monte_carlo
 from .network_control import run_network_control_analysis
+from .oracle import run_oracle_recovery_benchmark
 from .predictor import PhaseModel, calibrate_phase
 from .probe import run_probe, summarize
 from .qoe import run_stoi_evaluation
@@ -125,6 +126,13 @@ def _parser() -> argparse.ArgumentParser:
     cf.add_argument("--bitrate", type=int, default=24000)
     cf.add_argument("--expected-loss", type=int, default=20)
     cf.add_argument("--limit", type=int)
+
+    oracle = sub.add_parser("benchmark-oracle")
+    oracle.add_argument("--benchmark-results", type=Path, required=True)
+    oracle.add_argument("--manifest", type=Path, required=True)
+    oracle.add_argument("--output", type=Path, required=True)
+    oracle.add_argument("--bitrate", type=int, default=24000)
+    oracle.add_argument("--expected-loss", type=int, default=20)
 
     foresight = sub.add_parser("analyze-foresight")
     foresight.add_argument("--benchmark-results", type=Path, required=True)
@@ -294,6 +302,17 @@ def main() -> None:
             manifest=args.manifest,
             output=args.output,
             limit=args.limit,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "benchmark-oracle":
+        result = run_oracle_recovery_benchmark(
+            benchmark_results=args.benchmark_results,
+            manifest=args.manifest,
+            output=args.output,
+            bitrate=args.bitrate,
+            expected_loss_percent=args.expected_loss,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
