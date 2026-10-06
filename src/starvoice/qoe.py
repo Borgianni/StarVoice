@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import statistics
 import wave
+from importlib.metadata import version
 from pathlib import Path
 
 import numpy as np
@@ -222,6 +223,8 @@ def run_stoi_evaluation(
         "schema_version": 1,
         "metric": "STOI",
         "implementation": "pystoi",
+        "pystoi_version": version("pystoi"),
+        "numpy_version": np.__version__,
         "extended": False,
         "benchmark_results": str(benchmark_results),
         "reactive_results": str(reactive_results),
