@@ -75,9 +75,9 @@ def run_foresight_analysis(
     while respecting a small long-run average duty cycle.
 
     Recoverable opportunities are defined empirically from the frozen Always-FEC
-    replay. A lost frame i is an opportunity iff Always-FEC actually recovered it;
-    its protection slot is packet i+1 because Opus in-band FEC carries frame i in
-    the following packet.
+    replay. A lost source frame i is an opportunity iff Always-FEC recovered it.
+    The encoder-control decision belongs to source frame i; its LBRR is emitted in
+    a subsequent packet, normally i+1 for the 20 ms configuration used here.
 
     Oracle and risk-ranked results are placement diagnostics. They do not assert
     that a newly synthesized sparse Opus schedule would necessarily emit LBRR in
@@ -110,11 +110,10 @@ def run_foresight_analysis(
 
         frames = len(pred_log)
         opportunity_slots = {
-            int(row["sequence"]) + 1
+            int(row["sequence"])
             for row in always_log
             if bool(row.get("lost"))
             and bool(row.get("recovered_fec"))
-            and int(row["sequence"]) + 1 < frames
         }
         current_slots = {
             int(row["sequence"])
@@ -177,7 +176,7 @@ def run_foresight_analysis(
     )
 
     summary = {
-        "schema_version": 2,
+        "schema_version": 3,
         "experiment": "value of foresight under a long-run protection budget",
         "budget_semantics": (
             "Global long-run average across all frozen frames. Budget is not reset "
