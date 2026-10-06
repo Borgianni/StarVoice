@@ -19,6 +19,7 @@ analysis = [
   "pandas>=2.2",
   "pyarrow>=17",
   "matplotlib>=3.9",
+  "pystoi==0.4.1",
 ]
 dev = [
   "pytest>=8.3",
