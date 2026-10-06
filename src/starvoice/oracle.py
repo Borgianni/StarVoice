@@ -29,9 +29,10 @@ def run_oracle_recovery_benchmark(
 ) -> dict:
     """Replay the minimal sparse Oracle FEC schedule using real Opus/LBRR.
 
-    For each frozen condition, the Oracle protects packet i+1 iff the Always-FEC
-    replay actually recovered lost frame i. This is a non-causal upper bound and
-    uses the minimum one-slot-per-opportunity schedule implied by Opus in-band FEC.
+    For each frozen condition, the Oracle enables encoder FEC on source frame i
+    iff the Always-FEC replay recovered lost frame i. Opus generates that frame's
+    LBRR while encoding i and carries it in a later packet (normally i+1 at 20 ms).
+    This is a non-causal upper bound over encoder-control timing.
     """
     benchmark = _read_jsonl(benchmark_results)
     corpus = {r["utterance_id"]: r for r in _read_jsonl(manifest)}
@@ -62,7 +63,7 @@ def run_oracle_recovery_benchmark(
                 raise RuntimeError(f"packet-log length mismatch for {key}")
 
             schedule = {
-                int(row["sequence"]) + 1
+                int(row["sequence"])
                 for row in always_log
                 if bool(row.get("lost"))
                 and bool(row.get("recovered_fec"))
