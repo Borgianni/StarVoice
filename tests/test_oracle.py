@@ -39,7 +39,7 @@ def test_fixed_schedule_replay_runs(tmp_path: Path) -> None:
     result = replay_fixed_schedule_recovery_only(
         input_wav=wav,
         trace=trace,
-        schedule={3},
+        schedule={2},
     )
     assert result["frames"] == 8
     assert result["network_lost_frames"] == 1
