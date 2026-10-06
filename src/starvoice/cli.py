@@ -7,6 +7,7 @@ from pathlib import Path
 from .campaign import execute_campaign
 from .counterfactual import run_codec_counterfactual
 from .dataset import prepare_librispeech
+from .dnsmos import run_dnsmos_evaluation
 from .environment import run_doctor
 from .evaluation import run_codec_benchmark
 from .montecarlo import run_random_fec_monte_carlo
@@ -121,6 +122,14 @@ def _parser() -> argparse.ArgumentParser:
     cf.add_argument("--bitrate", type=int, default=24000)
     cf.add_argument("--expected-loss", type=int, default=20)
     cf.add_argument("--limit", type=int)
+
+    dnsmos = sub.add_parser("evaluate-dnsmos")
+    dnsmos.add_argument("--benchmark-results", type=Path, required=True)
+    dnsmos.add_argument("--reactive-results", type=Path, required=True)
+    dnsmos.add_argument("--counterfactual-results", type=Path, required=True)
+    dnsmos.add_argument("--output", type=Path, required=True)
+    dnsmos.add_argument("--model-path", type=Path, default=Path(".cache/starvoice-models/dnsmos/sig_bak_ovr.onnx"))
+    dnsmos.add_argument("--limit", type=int)
 
     wer = sub.add_parser("evaluate-wer")
     wer.add_argument("--benchmark-results", type=Path, required=True)
@@ -255,6 +264,18 @@ def main() -> None:
             reactive_results=args.reactive_results,
             manifest=args.manifest,
             output=args.output,
+            limit=args.limit,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "evaluate-dnsmos":
+        result = run_dnsmos_evaluation(
+            benchmark_results=args.benchmark_results,
+            reactive_results=args.reactive_results,
+            counterfactual_results=args.counterfactual_results,
+            output=args.output,
+            model_path=args.model_path,
             limit=args.limit,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
