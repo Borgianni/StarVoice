@@ -127,6 +127,13 @@ def _parser() -> argparse.ArgumentParser:
     cf.add_argument("--expected-loss", type=int, default=20)
     cf.add_argument("--limit", type=int)
 
+    act = sub.add_parser("benchmark-fec-actuation")
+    act.add_argument("--benchmark-results", type=Path, required=True)
+    act.add_argument("--manifest", type=Path, required=True)
+    act.add_argument("--output", type=Path, required=True)
+    act.add_argument("--bitrate", type=int, default=24000)
+    act.add_argument("--expected-loss", type=int, default=20)
+
     oracle = sub.add_parser("benchmark-oracle")
     oracle.add_argument("--benchmark-results", type=Path, required=True)
     oracle.add_argument("--manifest", type=Path, required=True)
@@ -302,6 +309,17 @@ def main() -> None:
             manifest=args.manifest,
             output=args.output,
             limit=args.limit,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "benchmark-fec-actuation":
+        result = run_fec_actuation_benchmark(
+            benchmark_results=args.benchmark_results,
+            manifest=args.manifest,
+            output=args.output,
+            bitrate=args.bitrate,
+            expected_loss_percent=args.expected_loss,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
