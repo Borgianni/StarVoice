@@ -92,6 +92,7 @@ def _parser() -> argparse.ArgumentParser:
     reactive.add_argument("--bitrate", type=int, default=24000)
     reactive.add_argument("--expected-loss", type=int, default=20)
     reactive.add_argument("--seed", type=int, default=2027)
+    reactive.add_argument("--limit", type=int)
 
     mc = sub.add_parser("monte-carlo-random-fec")
     mc.add_argument("--benchmark-results", type=Path, required=True)
@@ -185,6 +186,7 @@ def main() -> None:
             bitrate=args.bitrate,
             expected_loss_percent=args.expected_loss,
             seed=args.seed,
+            limit=args.limit,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
