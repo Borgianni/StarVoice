@@ -21,6 +21,7 @@ analysis = [
   "matplotlib>=3.9",
   "pystoi==0.4.1",
   "faster-whisper==1.2.1",
+  "av==18.1.0",
   "jiwer==4.0.0",
   "whisper-normalization==1.0.0",
   "huggingface-hub>=0.20",
