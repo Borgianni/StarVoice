@@ -8,7 +8,7 @@ import wave
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-from .opus import OpusConfig, OpusDecoder, OpusEncoder
+from .opus import OpusConfig, OpusDecoder, OpusEncoder, packet_has_fec
 from .predictor import PhaseModel
 from .probe import parse_target
 from .protocol import KIND_OPUS, Packet, decode_packet, encode_packet
@@ -148,8 +148,10 @@ def speech_loop(
                     lost += 1
                     # Opus in-band FEC for frame N is carried in packet N+1.
                     next_payload = received.get(seq + 1)
-                    next_meta = encoded.get(seq + 1)
-                    next_has_fec = bool(next_meta and next_meta[2])
+                    next_has_fec = (
+                        next_payload is not None
+                        and packet_has_fec(next_payload)
+                    )
                     if next_payload is not None and next_has_fec:
                         try:
                             pcm = dec.decode(next_payload, fec=True)
