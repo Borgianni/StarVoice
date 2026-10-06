@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 from dataclasses import dataclass
+from pathlib import Path
 
 OPUS_OK = 0
 OPUS_APPLICATION_VOIP = 2048
@@ -16,6 +17,36 @@ OPUS_SET_DRED_DURATION_REQUEST = 4050
 
 class OpusUnavailable(RuntimeError):
     pass
+
+
+def _bind_packet_api(lib: ctypes.CDLL) -> ctypes.CDLL:
+    lib.opus_packet_get_samples_per_frame.restype = ctypes.c_int
+    lib.opus_packet_get_samples_per_frame.argtypes = [
+        ctypes.POINTER(ctypes.c_ubyte),
+        ctypes.c_int32,
+    ]
+    lib.opus_packet_get_nb_channels.restype = ctypes.c_int
+    lib.opus_packet_get_nb_channels.argtypes = [ctypes.POINTER(ctypes.c_ubyte)]
+    lib.opus_packet_parse.restype = ctypes.c_int
+    lib.opus_packet_parse.argtypes = [
+        ctypes.POINTER(ctypes.c_ubyte),
+        ctypes.c_int32,
+        ctypes.POINTER(ctypes.c_ubyte),
+        ctypes.POINTER(ctypes.POINTER(ctypes.c_ubyte)),
+        ctypes.POINTER(ctypes.c_int16),
+        ctypes.POINTER(ctypes.c_int),
+    ]
+    try:
+        native_lbrr = lib.opus_packet_has_lbrr
+    except AttributeError:
+        native_lbrr = None
+    if native_lbrr is not None:
+        native_lbrr.restype = ctypes.c_int
+        native_lbrr.argtypes = [
+            ctypes.POINTER(ctypes.c_ubyte),
+            ctypes.c_int32,
+        ]
+    return lib
 
 
 def _lib() -> ctypes.CDLL:
@@ -41,33 +72,7 @@ def _lib() -> ctypes.CDLL:
         ctypes.c_int32,
     ]
 
-    lib.opus_packet_get_samples_per_frame.restype = ctypes.c_int
-    lib.opus_packet_get_samples_per_frame.argtypes = [
-        ctypes.POINTER(ctypes.c_ubyte),
-        ctypes.c_int32,
-    ]
-    lib.opus_packet_get_nb_channels.restype = ctypes.c_int
-    lib.opus_packet_get_nb_channels.argtypes = [ctypes.POINTER(ctypes.c_ubyte)]
-    lib.opus_packet_parse.restype = ctypes.c_int
-    lib.opus_packet_parse.argtypes = [
-        ctypes.POINTER(ctypes.c_ubyte),
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_ubyte),
-        ctypes.POINTER(ctypes.POINTER(ctypes.c_ubyte)),
-        ctypes.POINTER(ctypes.c_int16),
-        ctypes.POINTER(ctypes.c_int),
-    ]
-
-    try:
-        native_lbrr = lib.opus_packet_has_lbrr
-    except AttributeError:
-        native_lbrr = None
-    if native_lbrr is not None:
-        native_lbrr.restype = ctypes.c_int
-        native_lbrr.argtypes = [
-            ctypes.POINTER(ctypes.c_ubyte),
-            ctypes.c_int32,
-        ]
+    _bind_packet_api(lib)
 
     lib.opus_decoder_create.restype = ctypes.c_void_p
     lib.opus_decoder_create.argtypes = [
@@ -161,11 +166,16 @@ class OpusEncoder:
 
 
 def _packet_has_fec_compat(lib: ctypes.CDLL, data, length: int) -> bool:
-    """Compatibility implementation of opus_packet_has_lbrr for pre-1.5 libopus.
+    """Compatibility implementation of opus_packet_has_lbrr for older libopus.
 
-    Mirrors the public libopus 1.5 implementation using packet parser APIs that
+    Mirrors the upstream public implementation using packet parser APIs that
     are available in older libopus releases.
     """
+    # Opus TOC configurations 16..31 are CELT-only (high TOC bit set).
+    # Upstream opus_packet_has_lbrr() returns 0 immediately for CELT-only.
+    if data[0] & 0x80:
+        return False
+
     frame_size = lib.opus_packet_get_samples_per_frame(data, 48000)
     if frame_size <= 0:
         raise RuntimeError(f"opus_packet_get_samples_per_frame failed: {frame_size}")
@@ -195,6 +205,43 @@ def _packet_has_fec_compat(lib: ctypes.CDLL, data, length: int) -> bool:
     if channels == 2:
         lbrr = lbrr or ((first >> (6 - 2 * nb_frames)) & 0x1)
     return bool(lbrr)
+
+
+
+def _explicit_packet_lib(library_path: str | Path) -> ctypes.CDLL:
+    lib = ctypes.CDLL(str(library_path))
+    return _bind_packet_api(lib)
+
+
+def packet_has_fec_compat(
+    payload: bytes,
+    library_path: str | Path | None = None,
+) -> bool:
+    """Run the compatibility LBRR detector, optionally against an explicit libopus."""
+    if not payload:
+        return False
+    lib = _explicit_packet_lib(library_path) if library_path else _lib()
+    data = (ctypes.c_ubyte * len(payload)).from_buffer_copy(payload)
+    return _packet_has_fec_compat(lib, data, len(payload))
+
+
+def packet_has_fec_native(
+    payload: bytes,
+    library_path: str | Path | None = None,
+) -> bool:
+    """Run native opus_packet_has_lbrr; explicit recent libopus may be supplied."""
+    if not payload:
+        return False
+    lib = _explicit_packet_lib(library_path) if library_path else _lib()
+    try:
+        native = lib.opus_packet_has_lbrr
+    except AttributeError as exc:
+        raise OpusUnavailable("libopus does not export opus_packet_has_lbrr") from exc
+    data = (ctypes.c_ubyte * len(payload)).from_buffer_copy(payload)
+    rc = native(data, len(payload))
+    if rc < 0:
+        raise RuntimeError(f"opus_packet_has_lbrr failed: {rc}")
+    return bool(rc)
 
 
 def packet_has_fec(payload: bytes) -> bool:
