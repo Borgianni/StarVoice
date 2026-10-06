@@ -11,6 +11,7 @@ from .evaluation import run_codec_benchmark
 from .montecarlo import run_random_fec_monte_carlo
 from .predictor import PhaseModel, calibrate_phase
 from .probe import run_probe, summarize
+from .qoe import run_stoi_evaluation
 from .relay import run_relay
 from .reactive import run_reactive_benchmark
 from .replay import replay_speech
@@ -102,6 +103,13 @@ def _parser() -> argparse.ArgumentParser:
     mc.add_argument("--seed", type=int, default=2027)
     mc.add_argument("--bitrate", type=int, default=24000)
     mc.add_argument("--expected-loss", type=int, default=20)
+
+    stoi = sub.add_parser("evaluate-stoi")
+    stoi.add_argument("--benchmark-results", type=Path, required=True)
+    stoi.add_argument("--reactive-results", type=Path, required=True)
+    stoi.add_argument("--manifest", type=Path, required=True)
+    stoi.add_argument("--output", type=Path, required=True)
+    stoi.add_argument("--limit", type=int)
 
     replay = sub.add_parser("replay-speech")
     replay.add_argument("--input", type=Path, required=True)
@@ -200,6 +208,17 @@ def main() -> None:
             seed=args.seed,
             bitrate=args.bitrate,
             expected_loss_percent=args.expected_loss,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "evaluate-stoi":
+        result = run_stoi_evaluation(
+            benchmark_results=args.benchmark_results,
+            reactive_results=args.reactive_results,
+            manifest=args.manifest,
+            output=args.output,
+            limit=args.limit,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
