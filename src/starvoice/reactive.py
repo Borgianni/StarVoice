@@ -19,6 +19,7 @@ def run_reactive_benchmark(
     bitrate: int = 24000,
     expected_loss_percent: int = 20,
     seed: int = 2027,
+    limit: int | None = None,
 ) -> dict:
     """Run a causal RTT-triggered FEC baseline on frozen benchmark conditions.
 
@@ -35,6 +36,10 @@ def run_reactive_benchmark(
     predictive = [r for r in rows if r.get("policy") == "predictive-fec"]
     if not predictive:
         raise ValueError("benchmark contains no predictive-fec rows")
+    if limit is not None:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        predictive = predictive[:limit]
 
     corpus = {r["utterance_id"]: r for r in _read_jsonl(manifest)}
     output.mkdir(parents=True, exist_ok=True)
