@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from .actuation import run_fec_actuation_benchmark
 from .campaign import execute_campaign
 from .counterfactual import run_codec_counterfactual
 from .dataset import prepare_librispeech
