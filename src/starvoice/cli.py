@@ -9,6 +9,7 @@ from .counterfactual import run_codec_counterfactual
 from .dataset import prepare_librispeech
 from .dnsmos import run_dnsmos_evaluation
 from .environment import run_doctor
+from .fec_cost import run_fec_cost_benchmark
 from .evaluation import run_codec_benchmark
 from .montecarlo import run_random_fec_monte_carlo
 from .predictor import PhaseModel, calibrate_phase
@@ -122,6 +123,15 @@ def _parser() -> argparse.ArgumentParser:
     cf.add_argument("--bitrate", type=int, default=24000)
     cf.add_argument("--expected-loss", type=int, default=20)
     cf.add_argument("--limit", type=int)
+
+    fec_cost = sub.add_parser("benchmark-fec-cost")
+    fec_cost.add_argument("--manifest", type=Path, required=True)
+    fec_cost.add_argument("--output", type=Path, required=True)
+    fec_cost.add_argument("--positions-per-utterance", type=int, default=6)
+    fec_cost.add_argument("--window-ms", type=int, default=200)
+    fec_cost.add_argument("--bitrate", type=int, default=24000)
+    fec_cost.add_argument("--expected-loss", type=int, default=20)
+    fec_cost.add_argument("--limit", type=int)
 
     dnsmos = sub.add_parser("evaluate-dnsmos")
     dnsmos.add_argument("--benchmark-results", type=Path, required=True)
@@ -264,6 +274,19 @@ def main() -> None:
             reactive_results=args.reactive_results,
             manifest=args.manifest,
             output=args.output,
+            limit=args.limit,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "benchmark-fec-cost":
+        result = run_fec_cost_benchmark(
+            manifest=args.manifest,
+            output=args.output,
+            positions_per_utterance=args.positions_per_utterance,
+            window_ms=args.window_ms,
+            bitrate=args.bitrate,
+            expected_loss_percent=args.expected_loss,
             limit=args.limit,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
