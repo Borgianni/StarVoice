@@ -18,6 +18,7 @@ from .reactive import run_reactive_benchmark
 from .replay import replay_speech
 from .report import build_report
 from .speech import speech_loop
+from .wer import run_wer_evaluation
 
 
 POLICIES = ["plain", "always-fec", "random-fec", "predictive-fec", "reactive-fec"]
@@ -120,6 +121,19 @@ def _parser() -> argparse.ArgumentParser:
     cf.add_argument("--bitrate", type=int, default=24000)
     cf.add_argument("--expected-loss", type=int, default=20)
     cf.add_argument("--limit", type=int)
+
+    wer = sub.add_parser("evaluate-wer")
+    wer.add_argument("--benchmark-results", type=Path, required=True)
+    wer.add_argument("--reactive-results", type=Path, required=True)
+    wer.add_argument("--counterfactual-results", type=Path, required=True)
+    wer.add_argument("--manifest", type=Path, required=True)
+    wer.add_argument("--output", type=Path, required=True)
+    wer.add_argument("--model-cache", type=Path, default=Path(".cache/starvoice-models"))
+    wer.add_argument("--device", default="cpu")
+    wer.add_argument("--compute-type", default="float32")
+    wer.add_argument("--cpu-threads", type=int, default=4)
+    wer.add_argument("--beam-size", type=int, default=5)
+    wer.add_argument("--limit", type=int)
 
     replay = sub.add_parser("replay-speech")
     replay.add_argument("--input", type=Path, required=True)
@@ -241,6 +255,23 @@ def main() -> None:
             reactive_results=args.reactive_results,
             manifest=args.manifest,
             output=args.output,
+            limit=args.limit,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "evaluate-wer":
+        result = run_wer_evaluation(
+            benchmark_results=args.benchmark_results,
+            reactive_results=args.reactive_results,
+            counterfactual_results=args.counterfactual_results,
+            manifest=args.manifest,
+            output=args.output,
+            model_cache=args.model_cache,
+            device=args.device,
+            compute_type=args.compute_type,
+            cpu_threads=args.cpu_threads,
+            beam_size=args.beam_size,
             limit=args.limit,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
