@@ -20,6 +20,10 @@ analysis = [
   "pyarrow>=17",
   "matplotlib>=3.9",
   "pystoi==0.4.1",
+  "faster-whisper==1.2.1",
+  "jiwer==4.0.0",
+  "whisper-normalization==1.0.0",
+  "huggingface-hub>=0.20",
 ]
 dev = [
   "pytest>=8.3",
