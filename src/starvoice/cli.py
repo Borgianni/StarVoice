@@ -12,6 +12,7 @@ from .environment import run_doctor
 from .fec_cost import run_fec_cost_benchmark
 from .evaluation import run_codec_benchmark
 from .montecarlo import run_random_fec_monte_carlo
+from .network_control import run_network_control_analysis
 from .predictor import PhaseModel, calibrate_phase
 from .probe import run_probe, summarize
 from .qoe import run_stoi_evaluation
@@ -169,6 +170,15 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--target", required=True)
     run.add_argument("--site", required=True)
     run.add_argument("--output-root", type=Path, default=Path("runs"))
+
+    nc = sub.add_parser("analyze-network-controls")
+    nc.add_argument("--trace", type=Path, action="append", required=True)
+    nc.add_argument("--output", type=Path, required=True)
+    nc.add_argument("--threshold-ms", type=float, default=50.0)
+    nc.add_argument("--min-period-s", type=float, default=10.0)
+    nc.add_argument("--max-period-s", type=float, default=20.0)
+    nc.add_argument("--step-s", type=float, default=0.001)
+    nc.add_argument("--collapse-gap-s", type=float, default=0.5)
 
     rep = sub.add_parser("report")
     rep.add_argument("run_dir", type=Path)
@@ -360,6 +370,19 @@ def main() -> None:
     if args.cmd == "run":
         result = execute_campaign(args.campaign, args.target, args.site, args.output_root)
         print(result.campaign_dir)
+        return
+
+    if args.cmd == "analyze-network-controls":
+        result = run_network_control_analysis(
+            traces=args.trace,
+            output=args.output,
+            threshold_ms=args.threshold_ms,
+            min_period_s=args.min_period_s,
+            max_period_s=args.max_period_s,
+            step_s=args.step_s,
+            collapse_gap_s=args.collapse_gap_s,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
         return
 
     if args.cmd == "report":
