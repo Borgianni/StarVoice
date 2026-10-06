@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import json
-import math
 from pathlib import Path
 
 from .counterfactual import _packet_log_from_output
 
 
-DEFAULT_BUDGETS = (0.0025, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05, 0.10)
+DEFAULT_BUDGETS = (0.0005, 0.001, 0.0025, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05)
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -23,13 +22,44 @@ def _sorted_log(path: Path) -> list[dict]:
     return rows
 
 
-def _top_risk_slots(rows: list[dict], protected: int) -> set[int]:
-    protected = max(0, min(protected, len(rows)))
+def _frontier_point(
+    slots: list[dict],
+    opportunities: int,
+    protected_frames: int,
+) -> dict:
+    k = max(0, min(protected_frames, len(slots)))
     ranked = sorted(
-        range(len(rows)),
-        key=lambda i: (-float(rows[i].get("risk", 0.0)), i),
+        slots,
+        key=lambda x: (
+            -float(x["risk"]),
+            str(x["trace_name"]),
+            str(x["utterance_id"]),
+            int(x["sequence"]),
+        ),
     )
-    return set(ranked[:protected])
+    risk_hits = sum(bool(x["opportunity"]) for x in ranked[:k])
+    oracle_hits = min(k, opportunities)
+    random_hits = opportunities * k / len(slots) if slots else 0.0
+    return {
+        "protected_frames": k,
+        "effective_duty_cycle": k / len(slots) if slots else None,
+        "recoverable_opportunities": opportunities,
+        "risk_ranked_hits": risk_hits,
+        "risk_ranked_opportunity_recall": (
+            risk_hits / opportunities if opportunities else None
+        ),
+        "oracle_hits": oracle_hits,
+        "oracle_opportunity_recall": (
+            oracle_hits / opportunities if opportunities else None
+        ),
+        "random_expected_hits": random_hits,
+        "random_expected_opportunity_recall": (
+            random_hits / opportunities if opportunities else None
+        ),
+        "risk_fraction_of_oracle": (
+            risk_hits / oracle_hits if oracle_hits else None
+        ),
+    }
 
 
 def run_foresight_analysis(
@@ -37,17 +67,21 @@ def run_foresight_analysis(
     output: Path,
     budgets: tuple[float, ...] = DEFAULT_BUDGETS,
 ) -> dict:
-    """Quantify how useful future-risk information is under fixed FEC budgets.
+    """Quantify the value of future-risk information under a long-run FEC budget.
+
+    The budget is global across the frozen stream rather than reset per utterance.
+    This matches the behavior of the deployed threshold policy, which spends zero
+    protection in safe regions and can spend heavily during short risky windows
+    while respecting a small long-run average duty cycle.
 
     Recoverable opportunities are defined empirically from the frozen Always-FEC
-    replay: a lost frame is an opportunity iff Always-FEC actually recovered it.
-    The protection slot for lost frame i is packet i+1 because Opus in-band FEC
-    carries the previous frame.
+    replay. A lost frame i is an opportunity iff Always-FEC actually recovered it;
+    its protection slot is packet i+1 because Opus in-band FEC carries frame i in
+    the following packet.
 
-    This analysis does not claim that a sparse schedule would always emit LBRR
-    whenever Always-FEC did. It is a placement/headroom diagnostic: Random is the
-    chance baseline, risk-ranked uses the frozen causal risk score, and Oracle is
-    the upper bound with perfect knowledge of opportunity locations.
+    Oracle and risk-ranked results are placement diagnostics. They do not assert
+    that a newly synthesized sparse Opus schedule would necessarily emit LBRR in
+    every selected slot.
     """
     rows = _read_jsonl(benchmark_results)
     by_condition: dict[tuple[str, str], dict[str, dict]] = {}
@@ -55,7 +89,14 @@ def run_foresight_analysis(
         key = (row["trace_name"], row["utterance_id"])
         by_condition.setdefault(key, {})[row["policy"]] = row
 
-    conditions = []
+    slots: list[dict] = []
+    condition_summaries: list[dict] = []
+    total_losses = 0
+    total_opportunities = 0
+    current_protected = 0
+    current_hits = 0
+    current_actual = 0
+
     for key, policies in sorted(by_condition.items()):
         predictive = policies.get("predictive-fec")
         always = policies.get("always-fec")
@@ -81,98 +122,69 @@ def run_foresight_analysis(
             if bool(row.get("fec_enabled"))
         }
 
-        current_opportunity_hits = len(current_slots & opportunity_slots)
-        current_actual_recovered = int(predictive["fec_recovered_frames"])
-        current_budget = len(current_slots)
-
-        frontier = []
-        for duty in budgets:
-            if not 0.0 <= duty <= 1.0:
-                raise ValueError(f"invalid budget duty cycle: {duty}")
-            k = int(round(frames * duty))
-            risk_slots = _top_risk_slots(pred_log, k)
-            m = len(opportunity_slots)
-            risk_hits = len(risk_slots & opportunity_slots)
-            oracle_hits = min(k, m)
-            random_expected_hits = (m * k / frames) if frames else 0.0
-            frontier.append(
+        for row in pred_log:
+            sequence = int(row["sequence"])
+            slots.append(
                 {
-                    "duty_cycle": duty,
-                    "protected_frames": k,
-                    "recoverable_opportunities": m,
-                    "risk_ranked_hits": risk_hits,
-                    "oracle_hits": oracle_hits,
-                    "random_expected_hits": random_expected_hits,
+                    "trace_name": key[0],
+                    "utterance_id": key[1],
+                    "sequence": sequence,
+                    "risk": float(row.get("risk", 0.0)),
+                    "opportunity": sequence in opportunity_slots,
                 }
             )
 
-        conditions.append(
+        hits = len(current_slots & opportunity_slots)
+        actual = int(predictive["fec_recovered_frames"])
+        losses = int(predictive["network_lost_frames"])
+
+        total_losses += losses
+        total_opportunities += len(opportunity_slots)
+        current_protected += len(current_slots)
+        current_hits += hits
+        current_actual += actual
+
+        condition_summaries.append(
             {
                 "trace_name": key[0],
                 "utterance_id": key[1],
                 "frames": frames,
-                "network_lost_frames": int(predictive["network_lost_frames"]),
+                "network_lost_frames": losses,
                 "recoverable_opportunities": len(opportunity_slots),
-                "current_predictive": {
-                    "protected_frames": current_budget,
-                    "duty_cycle": current_budget / frames if frames else None,
-                    "opportunity_hits": current_opportunity_hits,
-                    "actual_recovered_frames": current_actual_recovered,
-                },
-                "frontier": frontier,
+                "current_predictive_protected_frames": len(current_slots),
+                "current_predictive_opportunity_hits": hits,
+                "current_predictive_actual_recovered_frames": actual,
             }
         )
 
-    total_frames = sum(c["frames"] for c in conditions)
-    total_losses = sum(c["network_lost_frames"] for c in conditions)
-    total_opportunities = sum(c["recoverable_opportunities"] for c in conditions)
-    current_protected = sum(
-        c["current_predictive"]["protected_frames"] for c in conditions
-    )
-    current_hits = sum(
-        c["current_predictive"]["opportunity_hits"] for c in conditions
-    )
-    current_actual = sum(
-        c["current_predictive"]["actual_recovered_frames"] for c in conditions
-    )
+    total_frames = len(slots)
+    frontier = []
+    for duty in budgets:
+        if not 0.0 <= duty <= 1.0:
+            raise ValueError(f"invalid budget duty cycle: {duty}")
+        k = int(round(total_frames * duty))
+        point = _frontier_point(slots, total_opportunities, k)
+        point["target_duty_cycle"] = duty
+        frontier.append(point)
 
-    aggregate_frontier = []
-    for idx, duty in enumerate(budgets):
-        protected = sum(c["frontier"][idx]["protected_frames"] for c in conditions)
-        risk_hits = sum(c["frontier"][idx]["risk_ranked_hits"] for c in conditions)
-        oracle_hits = sum(c["frontier"][idx]["oracle_hits"] for c in conditions)
-        random_hits = sum(
-            c["frontier"][idx]["random_expected_hits"] for c in conditions
-        )
-        aggregate_frontier.append(
-            {
-                "duty_cycle": duty,
-                "protected_frames": protected,
-                "effective_duty_cycle": protected / total_frames if total_frames else None,
-                "recoverable_opportunities": total_opportunities,
-                "risk_ranked_hits": risk_hits,
-                "risk_ranked_opportunity_recall": (
-                    risk_hits / total_opportunities if total_opportunities else None
-                ),
-                "oracle_hits": oracle_hits,
-                "oracle_opportunity_recall": (
-                    oracle_hits / total_opportunities if total_opportunities else None
-                ),
-                "random_expected_hits": random_hits,
-                "random_expected_opportunity_recall": (
-                    random_hits / total_opportunities if total_opportunities else None
-                ),
-                "risk_fraction_of_oracle": (
-                    risk_hits / oracle_hits if oracle_hits else None
-                ),
-            }
-        )
+    matched = _frontier_point(
+        slots,
+        total_opportunities,
+        current_protected,
+    )
+    matched["target_duty_cycle"] = (
+        current_protected / total_frames if total_frames else None
+    )
 
     summary = {
-        "schema_version": 1,
-        "experiment": "value of foresight under fixed protection budgets",
+        "schema_version": 2,
+        "experiment": "value of foresight under a long-run protection budget",
+        "budget_semantics": (
+            "Global long-run average across all frozen frames. Budget is not reset "
+            "per utterance; protection may concentrate in predicted-risk windows."
+        ),
         "benchmark_results": str(benchmark_results),
-        "conditions": len(conditions),
+        "conditions": len(condition_summaries),
         "frames": total_frames,
         "network_lost_frames": total_losses,
         "always_fec_recoverable_opportunities": total_opportunities,
@@ -193,22 +205,26 @@ def run_foresight_analysis(
                 current_actual / current_hits if current_hits else None
             ),
         },
-        "frontier": aggregate_frontier,
+        "risk_ranked_at_current_budget": matched,
+        "frontier": frontier,
         "interpretation": (
-            "Random is the exact-budget chance expectation. risk-ranked spends the "
-            "same budget on frames with the highest frozen causal StarVoice risk. "
-            "Oracle knows future recoverable opportunity locations. The gap between "
-            "risk-ranked and Oracle is prediction/placement headroom; the gap between "
-            "opportunity hits and actual recovered frames reflects sparse-schedule "
-            "Opus/LBRR realization and other codec constraints."
+            "Random is the exact global-budget chance expectation. risk-ranked "
+            "spends the same long-run budget on the highest frozen causal StarVoice "
+            "risk scores across the stream. Oracle knows future recoverable "
+            "opportunity locations. The risk-ranked-to-Oracle gap is predictor/"
+            "placement headroom. current_predictive is the actually replayed "
+            "threshold policy, not a synthetic ranking."
         ),
         "caution": (
             "Oracle and risk-ranked hits are placement diagnostics defined using "
             "opportunities observed under Always-FEC; they are not decoded QoE "
             "results and should not be presented as actual sparse-FEC recoveries."
         ),
-        "conditions_detail": conditions,
+        "conditions_detail": condition_summaries,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    output.write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     return summary
