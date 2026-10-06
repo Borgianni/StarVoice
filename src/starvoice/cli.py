@@ -12,12 +12,13 @@ from .montecarlo import run_random_fec_monte_carlo
 from .predictor import PhaseModel, calibrate_phase
 from .probe import run_probe, summarize
 from .relay import run_relay
+from .reactive import run_reactive_benchmark
 from .replay import replay_speech
 from .report import build_report
 from .speech import speech_loop
 
 
-POLICIES = ["plain", "always-fec", "random-fec", "predictive-fec"]
+POLICIES = ["plain", "always-fec", "random-fec", "predictive-fec", "reactive-fec"]
 
 
 def _add_policy_args(p: argparse.ArgumentParser) -> None:
@@ -81,6 +82,16 @@ def _parser() -> argparse.ArgumentParser:
     bench.add_argument("--bitrate", type=int, default=24000)
     bench.add_argument("--expected-loss", type=int, default=20)
     bench.add_argument("--limit", type=int)
+
+    reactive = sub.add_parser("benchmark-reactive")
+    reactive.add_argument("--benchmark-results", type=Path, required=True)
+    reactive.add_argument("--manifest", type=Path, required=True)
+    reactive.add_argument("--output", type=Path, required=True)
+    reactive.add_argument("--threshold-ms", type=float, default=50.0)
+    reactive.add_argument("--hold-s", type=float, default=0.2)
+    reactive.add_argument("--bitrate", type=int, default=24000)
+    reactive.add_argument("--expected-loss", type=int, default=20)
+    reactive.add_argument("--seed", type=int, default=2027)
 
     mc = sub.add_parser("monte-carlo-random-fec")
     mc.add_argument("--benchmark-results", type=Path, required=True)
@@ -160,6 +171,20 @@ def main() -> None:
             bitrate=args.bitrate,
             expected_loss_percent=args.expected_loss,
             limit=args.limit,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "benchmark-reactive":
+        result = run_reactive_benchmark(
+            benchmark_results=args.benchmark_results,
+            manifest=args.manifest,
+            output=args.output,
+            reactive_threshold_ms=args.threshold_ms,
+            reactive_hold_s=args.hold_s,
+            bitrate=args.bitrate,
+            expected_loss_percent=args.expected_loss,
+            seed=args.seed,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
