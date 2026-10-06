@@ -138,7 +138,11 @@ def _parser() -> argparse.ArgumentParser:
     dnsmos.add_argument("--reactive-results", type=Path, required=True)
     dnsmos.add_argument("--counterfactual-results", type=Path, required=True)
     dnsmos.add_argument("--output", type=Path, required=True)
-    dnsmos.add_argument("--model-path", type=Path, default=Path(".cache/starvoice-models/dnsmos/sig_bak_ovr.onnx"))
+    dnsmos.add_argument(
+        "--model-path",
+        type=Path,
+        default=Path(".cache/starvoice-models/dnsmos/sig_bak_ovr.onnx"),
+    )
     dnsmos.add_argument("--limit", type=int)
 
     wer = sub.add_parser("evaluate-wer")
