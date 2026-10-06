@@ -130,6 +130,8 @@ def replay_speech(
     seed: int = 1,
     packet_log: Path | None = None,
     trace_offset_frames: int = 0,
+    reactive_threshold_ms: float = 50.0,
+    reactive_hold_s: float = 0.2,
 ) -> dict:
     """Replay one recorded loss pattern against one speech-protection policy.
 
@@ -145,6 +147,18 @@ def replay_speech(
     writer = JsonlWriter(packet_log) if packet_log else None
     frame_bytes = cfg.frame_samples * cfg.channels * 2
     trace_offset_frames %= len(rows)
+
+    reactive_events = sorted(
+        (
+            (int(r["recv_ns"]), float(r["rtt_ms"]))
+            for r in rows
+            if r.get("recv_ns") is not None and r.get("rtt_ms") is not None
+        ),
+        key=lambda x: x[0],
+    )
+    reactive_event_index = 0
+    reactive_until_ns = -1
+    reactive_hold_ns = int(reactive_hold_s * 1e9)
 
     encoded: list[bytes] = []
     fec_flags: list[bool] = []
@@ -182,6 +196,19 @@ def replay_speech(
 
                 if policy == "random-fec":
                     fec = i in random_schedule
+                elif policy == "reactive-fec":
+                    while (
+                        reactive_event_index < len(reactive_events)
+                        and reactive_events[reactive_event_index][0] <= send_ns
+                    ):
+                        observed_ns, observed_rtt = reactive_events[reactive_event_index]
+                        if observed_rtt >= reactive_threshold_ms:
+                            reactive_until_ns = max(
+                                reactive_until_ns,
+                                observed_ns + reactive_hold_ns,
+                            )
+                        reactive_event_index += 1
+                    fec = send_ns < reactive_until_ns
                 else:
                     fec = _policy_fec(policy, risk, rng, random_duty_cycle)
 
@@ -258,6 +285,8 @@ def replay_speech(
             "fec_protected_frames": protected,
             "encoded_bytes": sum(map(len, encoded)),
             "replay_models": ["loss"],
+            "reactive_threshold_ms": reactive_threshold_ms if policy == "reactive-fec" else None,
+            "reactive_hold_s": reactive_hold_s if policy == "reactive-fec" else None,
         }
     finally:
         if writer:
