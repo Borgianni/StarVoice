@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .campaign import execute_campaign
+from .counterfactual import run_codec_counterfactual
 from .dataset import prepare_librispeech
 from .environment import run_doctor
 from .evaluation import run_codec_benchmark
@@ -111,6 +112,15 @@ def _parser() -> argparse.ArgumentParser:
     stoi.add_argument("--output", type=Path, required=True)
     stoi.add_argument("--limit", type=int)
 
+    cf = sub.add_parser("evaluate-codec-counterfactual")
+    cf.add_argument("--benchmark-results", type=Path, required=True)
+    cf.add_argument("--reactive-results", type=Path, required=True)
+    cf.add_argument("--manifest", type=Path, required=True)
+    cf.add_argument("--output", type=Path, required=True)
+    cf.add_argument("--bitrate", type=int, default=24000)
+    cf.add_argument("--expected-loss", type=int, default=20)
+    cf.add_argument("--limit", type=int)
+
     replay = sub.add_parser("replay-speech")
     replay.add_argument("--input", type=Path, required=True)
     replay.add_argument("--output", type=Path, required=True)
@@ -208,6 +218,19 @@ def main() -> None:
             seed=args.seed,
             bitrate=args.bitrate,
             expected_loss_percent=args.expected_loss,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "evaluate-codec-counterfactual":
+        result = run_codec_counterfactual(
+            benchmark_results=args.benchmark_results,
+            reactive_results=args.reactive_results,
+            manifest=args.manifest,
+            output=args.output,
+            bitrate=args.bitrate,
+            expected_loss_percent=args.expected_loss,
+            limit=args.limit,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
