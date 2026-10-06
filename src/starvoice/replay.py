@@ -31,6 +31,79 @@ def _exact_random_schedule(total_frames: int, duty_cycle: float, rng: random.Ran
     return set(rng.sample(range(total_frames), protected))
 
 
+
+def replay_fixed_schedule_recovery_only(
+    input_wav: Path,
+    trace: Path,
+    schedule: set[int],
+    trace_offset_frames: int = 0,
+    bitrate: int = 24000,
+    expected_loss_percent: int = 20,
+) -> dict:
+    """Replay an exact externally supplied FEC schedule and count real LBRR recovery."""
+    rows = _trace_rows(trace)
+    cfg = OpusConfig(bitrate=bitrate)
+    enc = OpusEncoder(cfg)
+    frame_bytes = cfg.frame_samples * cfg.channels * 2
+    trace_offset_frames %= len(rows)
+
+    try:
+        with wave.open(str(input_wav), "rb") as w:
+            if (w.getframerate(), w.getnchannels(), w.getsampwidth()) != (
+                cfg.sample_rate,
+                cfg.channels,
+                2,
+            ):
+                raise ValueError("input WAV must be 48 kHz mono PCM16")
+
+            total_frames = math.ceil(w.getnframes() / cfg.frame_samples)
+            if any(i < 0 or i >= total_frames for i in schedule):
+                raise ValueError("fixed schedule contains out-of-range frame")
+
+            encoded: list[bytes] = []
+            trace_indices: list[int] = []
+            i = 0
+            while True:
+                pcm = w.readframes(cfg.frame_samples)
+                if not pcm:
+                    break
+                if len(pcm) < frame_bytes:
+                    pcm += b"\0" * (frame_bytes - len(pcm))
+                fec = i in schedule
+                enc.set_fec(fec, expected_loss_percent)
+                encoded.append(enc.encode(pcm))
+                trace_indices.append((trace_offset_frames + i) % len(rows))
+                i += 1
+
+        lost = 0
+        recovered = 0
+        lbrr_present = 0
+        for i in range(len(encoded)):
+            if not bool(rows[trace_indices[i]].get("lost")):
+                continue
+            lost += 1
+            if i + 1 >= len(encoded):
+                continue
+            if bool(rows[trace_indices[i + 1]].get("lost")):
+                continue
+            if (i + 1) not in schedule:
+                continue
+            if packet_has_fec(encoded[i + 1]):
+                lbrr_present += 1
+                recovered += 1
+
+        return {
+            "frames": len(encoded),
+            "network_lost_frames": lost,
+            "fec_recovered_frames": recovered,
+            "fec_protected_frames": len(schedule),
+            "fec_duty_cycle": len(schedule) / len(encoded) if encoded else None,
+            "scheduled_received_following_packets_with_lbrr": lbrr_present,
+            "trace_offset_frames": trace_offset_frames,
+        }
+    finally:
+        enc.close()
+
 def replay_random_recovery_only(
     input_wav: Path,
     trace: Path,
