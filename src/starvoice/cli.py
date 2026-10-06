@@ -10,6 +10,7 @@ from .dataset import prepare_librispeech
 from .dnsmos import run_dnsmos_evaluation
 from .environment import run_doctor
 from .fec_cost import run_fec_cost_benchmark
+from .foresight import run_foresight_analysis
 from .evaluation import run_codec_benchmark
 from .montecarlo import run_random_fec_monte_carlo
 from .network_control import run_network_control_analysis
@@ -124,6 +125,10 @@ def _parser() -> argparse.ArgumentParser:
     cf.add_argument("--bitrate", type=int, default=24000)
     cf.add_argument("--expected-loss", type=int, default=20)
     cf.add_argument("--limit", type=int)
+
+    foresight = sub.add_parser("analyze-foresight")
+    foresight.add_argument("--benchmark-results", type=Path, required=True)
+    foresight.add_argument("--output", type=Path, required=True)
 
     fec_cost = sub.add_parser("benchmark-fec-cost")
     fec_cost.add_argument("--manifest", type=Path, required=True)
@@ -289,6 +294,14 @@ def main() -> None:
             manifest=args.manifest,
             output=args.output,
             limit=args.limit,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "analyze-foresight":
+        result = run_foresight_analysis(
+            benchmark_results=args.benchmark_results,
+            output=args.output,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
