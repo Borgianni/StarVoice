@@ -251,6 +251,7 @@ def run_deadline_audio_benchmark(
                     **metrics,
                     "output_wav": str(out_wav),
                     "source_output_wav": row["output_wav"],
+                    "source_packet_log": str(packet_log),
                     "deadline_audio": True,
                     "replay_models": ["loss", "RTT/one-way-proxy", "playout-deadline"],
                 }
