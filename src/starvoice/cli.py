@@ -17,6 +17,7 @@ from .foresight import run_foresight_analysis
 from .evaluation import run_codec_benchmark
 from .montecarlo import run_random_fec_monte_carlo
 from .network_control import run_network_control_analysis
+from .observability import run_causal_observability_audit
 from .oracle import run_oracle_recovery_benchmark
 from .predictor import PhaseModel, calibrate_phase
 from .probe import run_probe, summarize
@@ -157,6 +158,13 @@ def _parser() -> argparse.ArgumentParser:
     deadline_foresight.add_argument("--playout-ms", type=float, action="append")
     deadline_foresight.add_argument("--rtt-fraction", type=float, default=0.5)
     deadline_foresight.add_argument("--frame-ms", type=float, default=20.0)
+
+    obs = sub.add_parser("analyze-observability")
+    obs.add_argument("--benchmark-results", type=Path, required=True)
+    obs.add_argument("--output", type=Path, required=True)
+    obs.add_argument("--playout-ms", type=float, default=60.0)
+    obs.add_argument("--rtt-fraction", type=float, default=0.5)
+    obs.add_argument("--frame-ms", type=float, default=20.0)
 
     foresight = sub.add_parser("analyze-foresight")
     foresight.add_argument("--benchmark-results", type=Path, required=True)
@@ -376,6 +384,17 @@ def main() -> None:
             rtt_fraction=args.rtt_fraction,
             frame_ms=args.frame_ms,
             **kwargs,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "analyze-observability":
+        result = run_causal_observability_audit(
+            benchmark_results=args.benchmark_results,
+            output=args.output,
+            playout_ms=args.playout_ms,
+            rtt_fraction=args.rtt_fraction,
+            frame_ms=args.frame_ms,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
