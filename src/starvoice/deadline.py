@@ -18,6 +18,77 @@ def _trace_rows(path: Path) -> list[dict]:
     return rows
 
 
+
+def _estimated_arrival_ns(
+    packet_row: dict,
+    trace_rows: list[dict],
+    rtt_fraction: float,
+) -> int | None:
+    idx = int(packet_row["source_trace_index"])
+    if idx < 0 or idx >= len(trace_rows):
+        raise ValueError(f"trace index out of range: {idx}")
+    tr = trace_rows[idx]
+    if bool(tr.get("lost")) or tr.get("rtt_ms") is None:
+        return None
+    send_ns = int(packet_row["send_ns"])
+    one_way_ns = int(round(float(tr["rtt_ms"]) * rtt_fraction * 1_000_000))
+    return send_ns + one_way_ns
+
+
+def timely_fec_opportunity_slots(
+    packet_rows: list[dict],
+    trace_rows: list[dict],
+    playout_ms: float,
+    rtt_fraction: float = 0.5,
+    frame_ms: float = 20.0,
+) -> set[int]:
+    """Return source-frame slots that FEC can recover before playout.
+
+    The packet log should come from the protection policy whose realized LBRR is
+    being used to define opportunities, typically Always-FEC for an upper bound.
+    A slot is an opportunity only when its primary misses playout and the
+    following packet contains actual LBRR and arrives by that source frame's
+    deadline under the explicit RTT-fraction delay model.
+    """
+    if playout_ms < 0:
+        raise ValueError("playout_ms must be non-negative")
+    if not 0.0 <= rtt_fraction <= 1.0:
+        raise ValueError("rtt_fraction must be in [0, 1]")
+    if frame_ms <= 0:
+        raise ValueError("frame_ms must be positive")
+    if not packet_rows:
+        return set()
+
+    rows = sorted(packet_rows, key=lambda r: int(r["sequence"]))
+    for expected, row in enumerate(rows):
+        if int(row["sequence"]) != expected:
+            raise ValueError("packet log sequence must be contiguous from zero")
+
+    first_send_ns = int(rows[0]["send_ns"])
+    frame_ns = int(round(frame_ms * 1_000_000))
+    playout_ns = int(round(playout_ms * 1_000_000))
+    arrivals = [
+        _estimated_arrival_ns(row, trace_rows, rtt_fraction)
+        for row in rows
+    ]
+
+    opportunities: set[int] = set()
+    for i, row in enumerate(rows):
+        deadline_ns = first_send_ns + i * frame_ns + playout_ns
+        primary_arrival = arrivals[i]
+        primary_on_time = (
+            primary_arrival is not None and primary_arrival <= deadline_ns
+        )
+        if primary_on_time or i + 1 >= len(rows):
+            continue
+        if not bool(row.get("next_packet_has_lbrr")):
+            continue
+        next_arrival = arrivals[i + 1]
+        if next_arrival is not None and next_arrival <= deadline_ns:
+            opportunities.add(i)
+
+    return opportunities
+
 def evaluate_deadlines(
     packet_rows: list[dict],
     trace_rows: list[dict],
