@@ -187,7 +187,11 @@ def run_codec_counterfactual(
                         f"loss-mask drift: {trace_name}/{utterance_id}/{policy}"
                     )
 
-                packet_log = _packet_log_from_output(row["output_wav"])
+                packet_log = (
+                    Path(row["source_packet_log"])
+                    if row.get("source_packet_log")
+                    else _packet_log_from_output(row["output_wav"])
+                )
                 schedule = _fec_schedule(packet_log, int(row["frames"]))
                 if sum(schedule) != int(row["fec_protected_frames"]):
                     raise RuntimeError(
