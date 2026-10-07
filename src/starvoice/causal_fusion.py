@@ -162,55 +162,48 @@ def _fit_logistic(
     if positives == 0 or negatives == 0:
         raise ValueError("training labels need both classes")
 
-    d = len(xs[0])
-    means = [sum(row[j] for row in xs) / len(xs) for j in range(d)]
-    scales = []
-    for j in range(d):
-        var = sum((row[j] - means[j]) ** 2 for row in xs) / len(xs)
-        scales.append(max(math.sqrt(var), 1e-6))
+    try:
+        import numpy as np
+    except ImportError as exc:
+        raise RuntimeError(
+            "analyze-causal-fusion requires numpy; install the analysis extras"
+        ) from exc
 
-    zs = [
-        [(row[j] - means[j]) / scales[j] for j in range(d)]
-        for row in xs
-    ]
-    weights = [0.0] * d
+    x = np.asarray(xs, dtype=np.float64)
+    y = np.asarray(ys, dtype=np.float64)
+    means = x.mean(axis=0)
+    scales = x.std(axis=0)
+    scales = np.maximum(scales, 1e-6)
+    z = (x - means) / scales
+
+    weights = np.zeros(z.shape[1], dtype=np.float64)
     intercept = 0.0
     positive_weight = negatives / positives
+    sample_weights = np.where(y > 0.5, positive_weight, 1.0)
+    weight_sum = float(sample_weights.sum())
 
     for _ in range(iterations):
-        grad_w = [0.0] * d
-        grad_b = 0.0
-        weight_sum = 0.0
+        linear = intercept + z @ weights
+        p = np.empty_like(linear)
+        pos = linear >= 0
+        p[pos] = 1.0 / (1.0 + np.exp(-linear[pos]))
+        exp_linear = np.exp(linear[~pos])
+        p[~pos] = exp_linear / (1.0 + exp_linear)
 
-        for z, y in zip(zs, ys):
-            linear = intercept + sum(w * x for w, x in zip(weights, z))
-            if linear >= 0:
-                e = math.exp(-linear)
-                p = 1.0 / (1.0 + e)
-            else:
-                e = math.exp(linear)
-                p = e / (1.0 + e)
-            sample_weight = positive_weight if y else 1.0
-            error = (p - y) * sample_weight
-            grad_b += error
-            weight_sum += sample_weight
-            for j in range(d):
-                grad_w[j] += error * z[j]
+        error = (p - y) * sample_weights
+        grad_b = float(error.sum() / weight_sum)
+        grad_w = (z.T @ error) / weight_sum + l2 * weights
 
-        inv = 1.0 / weight_sum
-        intercept -= learning_rate * grad_b * inv
-        for j in range(d):
-            gradient = grad_w[j] * inv + l2 * weights[j]
-            weights[j] -= learning_rate * gradient
+        intercept -= learning_rate * grad_b
+        weights -= learning_rate * grad_w
 
     return LinearRiskModel(
         feature_names=FEATURES,
-        means=means,
-        scales=scales,
-        weights=weights,
-        intercept=intercept,
+        means=[float(v) for v in means],
+        scales=[float(v) for v in scales],
+        weights=[float(v) for v in weights],
+        intercept=float(intercept),
     )
-
 
 def _quantile(values: list[float], q: float) -> float | None:
     if not values:
