@@ -10,6 +10,7 @@ from .causal_fusion import run_causal_fusion_experiment
 from .counterfactual import run_codec_counterfactual
 from .dataset import prepare_librispeech
 from .deadline import run_deadline_analysis
+from .deadline_audio import run_deadline_audio_benchmark
 from .deadline_foresight import run_deadline_foresight_analysis
 from .deadline_gating import run_deadline_gating_analysis
 from .dnsmos import run_dnsmos_evaluation
@@ -146,6 +147,17 @@ def _parser() -> argparse.ArgumentParser:
     oracle.add_argument("--output", type=Path, required=True)
     oracle.add_argument("--bitrate", type=int, default=24000)
     oracle.add_argument("--expected-loss", type=int, default=20)
+
+    deadline_audio = sub.add_parser("benchmark-deadline-audio")
+    deadline_audio.add_argument("--benchmark-results", type=Path, required=True)
+    deadline_audio.add_argument("--reactive-results", type=Path, required=True)
+    deadline_audio.add_argument("--manifest", type=Path, required=True)
+    deadline_audio.add_argument("--output", type=Path, required=True)
+    deadline_audio.add_argument("--playout-ms", type=float, default=60.0)
+    deadline_audio.add_argument("--rtt-fraction", type=float, default=0.5)
+    deadline_audio.add_argument("--bitrate", type=int, default=24000)
+    deadline_audio.add_argument("--expected-loss", type=int, default=20)
+    deadline_audio.add_argument("--loss-exposed-only", action="store_true")
 
     deadlines = sub.add_parser("analyze-deadlines")
     deadlines.add_argument("--results", type=Path, action="append", required=True)
@@ -376,6 +388,21 @@ def main() -> None:
             output=args.output,
             bitrate=args.bitrate,
             expected_loss_percent=args.expected_loss,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "benchmark-deadline-audio":
+        result = run_deadline_audio_benchmark(
+            benchmark_results=args.benchmark_results,
+            reactive_results=args.reactive_results,
+            manifest=args.manifest,
+            output=args.output,
+            playout_ms=args.playout_ms,
+            rtt_fraction=args.rtt_fraction,
+            bitrate=args.bitrate,
+            expected_loss_percent=args.expected_loss,
+            loss_exposed_only=args.loss_exposed_only,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
