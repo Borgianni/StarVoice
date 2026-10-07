@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "starvoice"
+version = "0.1.0"
+description = "Reproducible predictive speech protection experiments over LEO satellite networks"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+dependencies = [
+  "PyYAML>=6.0.2",
+]
+
+[project.optional-dependencies]
+analysis = [
+  "numpy>=2.0",
+  "pandas>=2.2",
+  "pyarrow>=17",
+  "matplotlib>=3.9",
+  "pystoi==0.4.1",
+  "soundfile==0.14.0",
+  "librosa==1.0.0",
+  "onnxruntime==1.30.0",
+  "faster-whisper==1.2.1",
+  "av==18.1.0",
+  "jiwer==4.0.0",
+  "whisper-normalization==1.0.0",
+  "huggingface-hub>=0.20",
+]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.7",
+]
+
+[project.scripts]
+starvoice = "starvoice.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/starvoice"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
