@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .actuation import run_fec_actuation_benchmark
 from .campaign import execute_campaign
+from .causal_fusion import run_causal_fusion_experiment
 from .counterfactual import run_codec_counterfactual
 from .dataset import prepare_librispeech
 from .deadline import run_deadline_analysis
@@ -158,6 +159,16 @@ def _parser() -> argparse.ArgumentParser:
     deadline_foresight.add_argument("--playout-ms", type=float, action="append")
     deadline_foresight.add_argument("--rtt-fraction", type=float, default=0.5)
     deadline_foresight.add_argument("--frame-ms", type=float, default=20.0)
+
+    fusion = sub.add_parser("analyze-causal-fusion")
+    fusion.add_argument("--calibration-trace", type=Path, required=True)
+    fusion.add_argument("--benchmark-results", type=Path, required=True)
+    fusion.add_argument("--output", type=Path, required=True)
+    fusion.add_argument("--playout-ms", type=float, default=60.0)
+    fusion.add_argument("--rtt-fraction", type=float, default=0.5)
+    fusion.add_argument("--warmup-s", type=float, default=120.0)
+    fusion.add_argument("--risk-half-width-s", type=float, default=0.2)
+    fusion.add_argument("--threshold-ms", type=float, default=50.0)
 
     obs = sub.add_parser("analyze-observability")
     obs.add_argument("--benchmark-results", type=Path, required=True)
@@ -384,6 +395,20 @@ def main() -> None:
             rtt_fraction=args.rtt_fraction,
             frame_ms=args.frame_ms,
             **kwargs,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "analyze-causal-fusion":
+        result = run_causal_fusion_experiment(
+            calibration_trace=args.calibration_trace,
+            benchmark_results=args.benchmark_results,
+            output=args.output,
+            playout_ms=args.playout_ms,
+            rtt_fraction=args.rtt_fraction,
+            warmup_s=args.warmup_s,
+            risk_half_width_s=args.risk_half_width_s,
+            threshold_ms=args.threshold_ms,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
