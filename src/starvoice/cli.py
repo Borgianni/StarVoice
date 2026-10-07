@@ -11,6 +11,7 @@ from .counterfactual import run_codec_counterfactual
 from .dataset import prepare_librispeech
 from .deadline import run_deadline_analysis
 from .deadline_foresight import run_deadline_foresight_analysis
+from .deadline_gating import run_deadline_gating_analysis
 from .dnsmos import run_dnsmos_evaluation
 from .environment import run_doctor
 from .fec_cost import run_fec_cost_benchmark
@@ -152,6 +153,14 @@ def _parser() -> argparse.ArgumentParser:
     deadlines.add_argument("--playout-ms", type=float, action="append")
     deadlines.add_argument("--rtt-fraction", type=float, default=0.5)
     deadlines.add_argument("--frame-ms", type=float, default=20.0)
+
+    deadline_gating = sub.add_parser("analyze-deadline-gating")
+    deadline_gating.add_argument("--benchmark-results", type=Path, required=True)
+    deadline_gating.add_argument("--output", type=Path, required=True)
+    deadline_gating.add_argument("--playout-ms", type=float, action="append")
+    deadline_gating.add_argument("--rtt-fraction", type=float, default=0.5)
+    deadline_gating.add_argument("--frame-ms", type=float, default=20.0)
+    deadline_gating.add_argument("--window-ms", type=float, default=250.0)
 
     deadline_foresight = sub.add_parser("analyze-deadline-foresight")
     deadline_foresight.add_argument("--benchmark-results", type=Path, required=True)
@@ -380,6 +389,21 @@ def main() -> None:
             output=args.output,
             rtt_fraction=args.rtt_fraction,
             frame_ms=args.frame_ms,
+            **kwargs,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "analyze-deadline-gating":
+        kwargs = {}
+        if args.playout_ms:
+            kwargs["playout_ms"] = tuple(args.playout_ms)
+        result = run_deadline_gating_analysis(
+            benchmark_results=args.benchmark_results,
+            output=args.output,
+            rtt_fraction=args.rtt_fraction,
+            frame_ms=args.frame_ms,
+            window_ms=args.window_ms,
             **kwargs,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
