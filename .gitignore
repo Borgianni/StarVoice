@@ -9,3 +9,9 @@ runs/
 *.pcapng
 *.parquet
 phase-model.json
+.cache/
+build/
+data/
+datasets/
+results/
+third_party/
