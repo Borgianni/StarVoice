@@ -8,6 +8,7 @@ from .actuation import run_fec_actuation_benchmark
 from .campaign import execute_campaign
 from .counterfactual import run_codec_counterfactual
 from .dataset import prepare_librispeech
+from .deadline import run_deadline_analysis
 from .dnsmos import run_dnsmos_evaluation
 from .environment import run_doctor
 from .fec_cost import run_fec_cost_benchmark
@@ -141,6 +142,13 @@ def _parser() -> argparse.ArgumentParser:
     oracle.add_argument("--output", type=Path, required=True)
     oracle.add_argument("--bitrate", type=int, default=24000)
     oracle.add_argument("--expected-loss", type=int, default=20)
+
+    deadlines = sub.add_parser("analyze-deadlines")
+    deadlines.add_argument("--results", type=Path, action="append", required=True)
+    deadlines.add_argument("--output", type=Path, required=True)
+    deadlines.add_argument("--playout-ms", type=float, action="append")
+    deadlines.add_argument("--rtt-fraction", type=float, default=0.5)
+    deadlines.add_argument("--frame-ms", type=float, default=20.0)
 
     foresight = sub.add_parser("analyze-foresight")
     foresight.add_argument("--benchmark-results", type=Path, required=True)
@@ -332,6 +340,20 @@ def main() -> None:
             output=args.output,
             bitrate=args.bitrate,
             expected_loss_percent=args.expected_loss,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "analyze-deadlines":
+        kwargs = {}
+        if args.playout_ms:
+            kwargs["playout_ms"] = tuple(args.playout_ms)
+        result = run_deadline_analysis(
+            result_sets=args.results,
+            output=args.output,
+            rtt_fraction=args.rtt_fraction,
+            frame_ms=args.frame_ms,
+            **kwargs,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
