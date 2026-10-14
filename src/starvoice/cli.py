@@ -24,6 +24,7 @@ from .observability import run_causal_observability_audit
 from .oracle import run_oracle_recovery_benchmark
 from .predictor import PhaseModel, calibrate_phase
 from .probe import run_probe, summarize
+from .realtime import receive_speech, send_speech
 from .qoe import run_stoi_evaluation
 from .relay import run_relay
 from .reactive import run_reactive_benchmark
@@ -56,6 +57,26 @@ def _parser() -> argparse.ArgumentParser:
     r.add_argument("--bind", default="0.0.0.0")
     r.add_argument("--port", type=int, default=5005)
     r.add_argument("--log", type=Path)
+
+    rx = sub.add_parser("receive-speech")
+    rx.add_argument("--bind", default="127.0.0.1")
+    rx.add_argument("--port", type=int, default=5005)
+    rx.add_argument("--playout-buffer-ms", type=float, default=60.0)
+    rx.add_argument("--output-dir", type=Path, required=True)
+
+    tx = sub.add_parser("send-speech")
+    tx.add_argument("--target", required=True)
+    tx.add_argument("--input", type=Path, required=True)
+    tx.add_argument("--output-dir", type=Path, required=True)
+    tx.add_argument(
+        "--policy", choices=["plain", "always-fec", "predictive-fec", "random-fec"],
+        default="plain",
+    )
+    tx.add_argument("--predictor", type=Path)
+    tx.add_argument("--bitrate", type=int, default=24000)
+    tx.add_argument("--expected-loss", type=int, default=20)
+    tx.add_argument("--random-duty-cycle", type=float, default=0.1)
+    tx.add_argument("--seed", type=int, default=2027)
 
     q = sub.add_parser("probe")
     q.add_argument("--target", required=True)
@@ -277,6 +298,25 @@ def main() -> None:
 
     if args.cmd == "relay":
         run_relay(args.bind, args.port, args.log)
+        return
+
+    if args.cmd == "receive-speech":
+        result = receive_speech(
+            bind=args.bind, port=args.port, output_dir=args.output_dir,
+            buffer_ms=args.playout_buffer_ms,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "send-speech":
+        result = send_speech(
+            target=args.target, input_wav=args.input,
+            output_dir=args.output_dir, policy=args.policy,
+            predictor=_predictor(args.predictor), bitrate=args.bitrate,
+            expected_loss_percent=args.expected_loss,
+            random_duty_cycle=args.random_duty_cycle, seed=args.seed,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
         return
 
     if args.cmd == "probe":
