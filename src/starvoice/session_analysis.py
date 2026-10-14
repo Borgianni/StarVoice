@@ -55,11 +55,17 @@ def _timing_report(decisions: list[dict]) -> dict:
                     (row["wav_write_end_mono_ns"] - row["decode_end_mono_ns"]) / 1e6, 3
                 ) if instrumented else None,
                 "previous_decision_log_write_ms": round(
-                    row.get("previous_decision_log_write_ns", 0) / 1e6, 3
+                    row["previous_decision_log_write_ns"] / 1e6, 3
                 ) if "previous_decision_log_write_ns" in row else None,
                 "packet_log_write_max_ms": round(
-                    row.get("packet_log_write_max_ns_since_previous_frame", 0) / 1e6, 3
+                    row["packet_log_write_max_ns_since_previous_frame"] / 1e6, 3
                 ) if "packet_log_write_max_ns_since_previous_frame" in row else None,
+                "previous_decision_log_enqueue_ms": round(
+                    row["previous_decision_log_enqueue_ns"] / 1e6, 3
+                ) if "previous_decision_log_enqueue_ns" in row else None,
+                "packet_log_enqueue_max_ms": round(
+                    row["packet_log_enqueue_max_ns_since_previous_frame"] / 1e6, 3
+                ) if "packet_log_enqueue_max_ns_since_previous_frame" in row else None,
                 "select_overshoot_max_ms": round(
                     row.get("select_overshoot_max_ns_since_previous_frame", 0) / 1e6, 3
                 ) if "select_overshoot_max_ns_since_previous_frame" in row else None,
@@ -91,6 +97,16 @@ def _timing_report(decisions: list[dict]) -> dict:
             max(row.get("select_overshoot_max_ns_since_previous_frame", 0)
                 for row in decisions) / 1e6, 3
         ) if instrumented else None,
+        "previous_decision_log_enqueue_max_ms": round(
+            max(row.get("previous_decision_log_enqueue_ns", 0) for row in decisions) / 1e6, 3
+        ) if instrumented and any("previous_decision_log_enqueue_ns" in row for row in decisions)
+        else None,
+        "packet_log_enqueue_max_ms": round(
+            max(row.get("packet_log_enqueue_max_ns_since_previous_frame", 0)
+                for row in decisions) / 1e6, 3
+        ) if instrumented and any(
+            "packet_log_enqueue_max_ns_since_previous_frame" in row for row in decisions
+        ) else None,
         "worst_dispatch_frames": worst[:5],
         "note": (
             "Dispatch measured at receiver decision start, before Opus and WAV I/O."
@@ -167,5 +183,6 @@ def analyze_session(root: Path) -> dict:
         "receiver_clock_samples": len(clocks_rx),
         "observed_unique_packets": len(first_rx),
         "injected_drops": sum(bool(r.get("injected_drop")) for r in sent),
+        "receiver_log_writer": summary_rx.get("jsonl_logging", {"mode": "legacy_sync"}),
         "endpoint": "receiver-local playout; absolute OWD not estimated",
     }
