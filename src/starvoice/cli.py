@@ -336,10 +336,9 @@ def _with_clock_logging(
             result = operation(staging_dir)
         finally:
             stop.set()
-            thread.join(timeout=15)
-            if thread.is_alive():
-                # Do not archive files which the clock worker might still modify.
-                raise RuntimeError("clock logger did not stop; session remains in RAM")
+            # A writer may be inside a bounded NTP subprocess call.
+            # Never archive while it can still modify clock.jsonl.
+            thread.join()
         if errors:
             raise RuntimeError(f"clock logging failed: {errors}")
         return result
