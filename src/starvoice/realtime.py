@@ -303,6 +303,7 @@ def receive_speech(
                     now = time.monotonic_ns()
                     if now < due:
                         break
+                    decision_start_ns = time.monotonic_ns()
                     decision, payload, repair_seq = choose_playout(
                         next_playout, due, arrivals
                     )
@@ -317,12 +318,19 @@ def receive_speech(
                         pcm = decoder.decode(None, fec=False)
                         decision = "plc"
                         repair_seq = None
+                    decode_end_ns = time.monotonic_ns()
                     wav_out.writeframes(pcm)
+                    wav_write_end_ns = time.monotonic_ns()
                     counts[decision] += 1
                     writer_decisions.write({
                         "session_id": str(session_id), "sequence": next_playout,
                         "scheduled_playout_mono_ns": due,
-                        "actual_playout_mono_ns": time.monotonic_ns(),
+                        "decision_start_mono_ns": decision_start_ns,
+                        "decode_end_mono_ns": decode_end_ns,
+                        "wav_write_end_mono_ns": wav_write_end_ns,
+                        # Legacy field was measured AFTER decoding and file I/O,
+                        # not at scheduler wakeup; retain it for old log readers.
+                        "actual_playout_mono_ns": wav_write_end_ns,
                         "decision": decision, "source_packet_sequence": repair_seq,
                         "startup_uncertain": next_playout < first_seq,
                     })
