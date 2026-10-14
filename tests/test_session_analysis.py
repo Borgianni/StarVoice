@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from starvoice.session_analysis import analyze_session
+from starvoice.session_analysis import _timing_report, analyze_session
 
 
 def test_analyze_session_causal_and_detects_violation(tmp_path: Path):
@@ -43,3 +43,36 @@ def test_analyze_session_causal_and_detects_violation(tmp_path: Path):
     result = analyze_session(tmp_path)
     assert not result["valid"]
     assert "causality_1" in result["errors"]
+
+
+def test_timing_report_distinguishes_scheduler_from_disk_and_decode():
+    rows = [
+        {
+            "sequence": 0, "scheduled_playout_mono_ns": 0,
+            "decision_start_mono_ns": 1_000_000,
+            "decode_end_mono_ns": 1_300_000,
+            "wav_write_end_mono_ns": 30_000_000,
+            "actual_playout_mono_ns": 30_000_000,
+        },
+        {
+            "sequence": 1, "scheduled_playout_mono_ns": 20_000_000,
+            "decision_start_mono_ns": 22_000_000,
+            "decode_end_mono_ns": 22_200_000,
+            "wav_write_end_mono_ns": 22_400_000,
+            "actual_playout_mono_ns": 22_400_000,
+        },
+    ]
+    result = _timing_report(rows)
+    assert result["instrumented"]
+    assert result["dispatch_max_ms"] == 2.0
+    assert result["wav_write_max_ms"] == 28.7
+    assert result["dispatch_over_20ms"] == 0
+    assert result["worst_dispatch_frames"][0]["sequence"] == 1
+
+    legacy = [{k: row[k] for k in (
+        "sequence", "scheduled_playout_mono_ns", "actual_playout_mono_ns"
+    )} for row in rows]
+    result = _timing_report(legacy)
+    assert not result["instrumented"]
+    assert result["dispatch_max_ms"] == 30.0
+    assert result["decode_max_ms"] is None
