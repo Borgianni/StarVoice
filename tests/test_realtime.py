@@ -103,6 +103,11 @@ def test_localhost_real_opus_realtime_receiver(tmp_path: Path):
     assert len(rows) == 55
     assert [r["sequence"] for r in rows] == list(range(55))
     assert all(r["actual_playout_mono_ns"] >= r["scheduled_playout_mono_ns"] for r in rows)
+    assert all(
+        r["scheduled_playout_mono_ns"] <= r["decision_start_mono_ns"]
+        <= r["decode_end_mono_ns"] <= r["wav_write_end_mono_ns"]
+        == r["actual_playout_mono_ns"] for r in rows
+    )
     assert (receiver_output / "received.wav").exists()
 
 
