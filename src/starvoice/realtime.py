@@ -14,9 +14,9 @@ import struct
 import time
 import uuid
 import wave
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from .opus import OpusConfig, OpusDecoder, OpusEncoder, packet_has_fec
 from .predictor import PhaseModel
@@ -114,7 +114,7 @@ def _validated_start(payload: bytes) -> dict:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("invalid START metadata") from exc
     if not isinstance(obj, dict):
-        raise ValueError("START metadata must be an object")
+        raise TypeError("START metadata must be an object")
     if (
         not 0 < obj.get("frames", 0) <= 1_000_000
         or obj.get("frame_ms") != FRAME_MS
@@ -181,7 +181,7 @@ def send_speech(
                     if peer == addr and ack.kind == KIND_ACK and ack.session_id == sid:
                         acked = True
                         break
-                except (socket.timeout, ValueError):
+                except (TimeoutError, ValueError):
                     pass
             if not acked:
                 raise TimeoutError("SV02 receiver did not ACK START")
@@ -351,7 +351,7 @@ def receive_speech(
                         decoder = OpusDecoder(OpusConfig(bitrate=int(metadata["bitrate"])))
                         writer_rx = JsonlWriter(output_dir / "receiver.jsonl")
                         writer_decisions = JsonlWriter(output_dir / "frame-decisions.jsonl")
-                        wav_out = wave.open(str(output_dir / "received.wav"), "wb")
+                        wav_out = wave.open(str(output_dir / "received.wav"), "wb")  # noqa: SIM115
                         wav_out.setnchannels(CHANNELS)
                         wav_out.setsampwidth(2)
                         wav_out.setframerate(SAMPLE_RATE)
