@@ -135,14 +135,17 @@ def send_speech(
     expected_loss_percent: int = 20,
     random_duty_cycle: float = 0.1,
     seed: int = 2027,
+    drop_sequences: frozenset[int] = frozenset(),
 ) -> dict:
-    """Send paced 20-ms Opus frames to a SV02 receiver, with a START/ACK handshake."""
+    """Send paced 20-ms Opus frames; optionally suppress selected datagrams for testing."""
     if policy == "predictive-fec" and predictor is None:
         raise ValueError("predictive-fec requires --predictor")
     if policy not in ("plain", "always-fec", "predictive-fec", "random-fec"):
         raise ValueError(f"unsupported realtime policy: {policy}")
     if not 0.0 <= random_duty_cycle <= 1.0:
         raise ValueError("invalid random duty cycle")
+    if any(sequence < 0 for sequence in drop_sequences):
+        raise ValueError("drop sequences must be nonnegative")
 
     cfg = OpusConfig(bitrate=bitrate)
     frame_bytes = cfg.frame_samples * cfg.channels * 2
@@ -166,6 +169,8 @@ def send_speech(
             expected = math.ceil(wav.getnframes() / cfg.frame_samples)
             if expected == 0:
                 raise ValueError("empty input WAV")
+            if any(sequence >= expected for sequence in drop_sequences):
+                raise ValueError("drop sequence out of input WAV range")
             start = json.dumps({
                 "frames": expected, "frame_ms": FRAME_MS, "sample_rate": SAMPLE_RATE,
                 "channels": CHANNELS, "bitrate": bitrate, "policy": policy,
@@ -206,12 +211,15 @@ def send_speech(
                 opus = enc.encode(pcm)
                 send_ns = time.monotonic_ns()
                 payload = encode_wire(WirePacket(KIND_AUDIO, sid, seq, send_ns, opus))
-                sock.sendto(payload, addr)
+                injected_drop = seq in drop_sequences
+                if not injected_drop:
+                    sock.sendto(payload, addr)
                 writer.write({
                     "session_id": str(sid), "sequence": seq,
                     "scheduled_send_mono_ns": scheduled_ns,
                     "send_mono_ns": send_ns, "send_realtime_ns": time.time_ns(),
                     "fec_enabled": fec, "risk": risk, "has_lbrr": packet_has_fec(opus),
+                    "injected_drop": injected_drop,
                     "opus_bytes": len(opus), "udp_payload_bytes": len(payload),
                 })
                 protected += int(fec)
@@ -229,7 +237,8 @@ def send_speech(
             "frames": frames, "fec_protected_frames": protected,
             "fec_duty_cycle": protected / frames, "opus_bytes": opus_bytes,
             "udp_payload_bytes": payload_bytes, "policy": policy,
-            "target": target,
+            "target": target, "injected_drops": len(drop_sequences),
+            "injected_drop_sequences": sorted(drop_sequences),
         }
         dump_json(output_dir / "manifest.json", {
             **environment_snapshot(), "session_id": str(sid), "role": "sender",
@@ -237,6 +246,7 @@ def send_speech(
             "sample_rate": SAMPLE_RATE, "channels": CHANNELS, "bitrate": bitrate,
             "policy": policy, "random_seed": seed, "target": target,
             "input_wav": str(input_wav), "frames": expected,
+            "injected_drop_sequences": sorted(drop_sequences),
         })
         dump_json(output_dir / "summary.json", summary)
         return summary
