@@ -292,6 +292,9 @@ def receive_speech(
     final_at_ns = None
     duplicates = malformed = 0
     ended = False
+    previous_decision_log_write_ns = 0
+    packet_log_write_max_ns = 0
+    select_overshoot_max_ns = 0
     try:
         while True:
             now = time.monotonic_ns()
@@ -322,7 +325,7 @@ def receive_speech(
                     wav_out.writeframes(pcm)
                     wav_write_end_ns = time.monotonic_ns()
                     counts[decision] += 1
-                    writer_decisions.write({
+                    decision_log_row = {
                         "session_id": str(session_id), "sequence": next_playout,
                         "scheduled_playout_mono_ns": due,
                         "decision_start_mono_ns": decision_start_ns,
@@ -333,7 +336,17 @@ def receive_speech(
                         "actual_playout_mono_ns": wav_write_end_ns,
                         "decision": decision, "source_packet_sequence": repair_seq,
                         "startup_uncertain": next_playout < first_seq,
-                    })
+                        "previous_decision_log_write_ns": previous_decision_log_write_ns,
+                        "packet_log_write_max_ns_since_previous_frame":
+                            packet_log_write_max_ns,
+                        "select_overshoot_max_ns_since_previous_frame":
+                            select_overshoot_max_ns,
+                    }
+                    log_start_ns = time.monotonic_ns()
+                    writer_decisions.write(decision_log_row)
+                    previous_decision_log_write_ns = time.monotonic_ns() - log_start_ns
+                    packet_log_write_max_ns = 0
+                    select_overshoot_max_ns = 0
                     next_playout += 1
 
                 if next_playout >= expected:
@@ -346,7 +359,13 @@ def receive_speech(
             if first_ns is not None and next_playout < expected:
                 next_due = playout_deadline_ns(first_ns, first_seq, next_playout, buffer_ms)
                 timeout = max(0.0, min(timeout, (next_due - time.monotonic_ns()) / 1e9))
+            select_start_ns = time.monotonic_ns()
             readable, _, _ = select.select([sock], [], [], timeout)
+            select_end_ns = time.monotonic_ns()
+            select_overshoot_max_ns = max(
+                select_overshoot_max_ns,
+                max(0, select_end_ns - select_start_ns - round(timeout * 1e9)),
+            )
             if not readable:
                 continue
 
@@ -404,6 +423,7 @@ def receive_speech(
                         arrivals[p.sequence] = Arrival(receive_ns, p.payload)
                         if first_ns is None:
                             first_ns, first_seq = receive_ns, p.sequence
+                    rx_log_start_ns = time.monotonic_ns()
                     writer_rx.write({
                         "session_id": str(session_id), "sequence": p.sequence,
                         "receive_mono_ns": receive_ns,
@@ -413,6 +433,10 @@ def receive_speech(
                         "has_lbrr": packet_has_fec(p.payload),
                         "duplicate": duplicate,
                     })
+                    packet_log_write_max_ns = max(
+                        packet_log_write_max_ns,
+                        time.monotonic_ns() - rx_log_start_ns,
+                    )
 
         summary = {
             "schema_version": 2, "session_id": str(session_id), "role": "receiver",
