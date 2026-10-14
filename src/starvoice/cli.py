@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .actuation import run_fec_actuation_benchmark
 from .campaign import execute_campaign
+from .clocklog import run_clock_logger
 from .causal_fusion import run_causal_fusion_experiment
 from .counterfactual import run_codec_counterfactual
 from .dataset import prepare_librispeech
@@ -52,6 +53,12 @@ def _parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("doctor")
+
+    clock = sub.add_parser("clock-log")
+    clock.add_argument("--output", type=Path, required=True)
+    clock.add_argument("--duration", type=float, default=60.0)
+    clock.add_argument("--interval", type=float, default=10.0)
+    clock.add_argument("--no-dish", action="store_true")
 
     r = sub.add_parser("relay")
     r.add_argument("--bind", default="0.0.0.0")
@@ -291,6 +298,13 @@ def _predictor(path: Path | None) -> PhaseModel | None:
 
 def main() -> None:
     args = _parser().parse_args()
+    if args.cmd == "clock-log":
+        n = run_clock_logger(
+            args.output, args.duration, args.interval, include_dish=not args.no_dish
+        )
+        print(json.dumps({"samples": n, "output": str(args.output)}))
+        return
+
     if args.cmd == "doctor":
         checks = run_doctor()
         for c in checks:
