@@ -28,6 +28,7 @@ from .predictor import PhaseModel, calibrate_phase
 from .probe import run_probe, summarize
 from .realtime import receive_speech, send_speech
 from .session_analysis import analyze_session
+from .session_storage import run_session_storage
 from .qoe import run_stoi_evaluation
 from .relay import run_relay
 from .reactive import run_reactive_benchmark
@@ -76,12 +77,14 @@ def _parser() -> argparse.ArgumentParser:
     rx.add_argument("--playout-buffer-ms", type=float, default=60.0)
     rx.add_argument("--output-dir", type=Path, required=True)
     rx.add_argument("--clock-interval", type=float, default=10.0)
+    rx.add_argument("--storage-mode", choices=["ram", "direct"], default="ram")
 
     tx = sub.add_parser("send-speech")
     tx.add_argument("--target", required=True)
     tx.add_argument("--input", type=Path, required=True)
     tx.add_argument("--output-dir", type=Path, required=True)
     tx.add_argument("--clock-interval", type=float, default=10.0)
+    tx.add_argument("--storage-mode", choices=["ram", "direct"], default="ram")
     tx.add_argument(
         "--policy", choices=["plain", "always-fec", "predictive-fec", "random-fec"],
         default="plain",
@@ -303,42 +306,47 @@ def _predictor(path: Path | None) -> PhaseModel | None:
     return PhaseModel.load(path) if path else None
 
 
-def _with_clock_logging(output_dir: Path, interval: float, include_dish: bool, operation):
-    """Collect clock diagnostics concurrently with one real-time session."""
+def _with_clock_logging(
+    output_dir: Path, interval: float, include_dish: bool, operation,
+    storage_mode: str = "ram",
+):
+    """Log clock diagnostics during capture; archive only after all writers stop."""
     if interval <= 0:
         raise ValueError("--clock-interval must be positive")
-    stop = threading.Event()
-    errors = []
 
-    def logger():
-        try:
-            run_clock_logger(
-                output=output_dir / "clock.jsonl",
-                duration_s=24 * 3600,
-                interval_s=interval,
-                include_dish=include_dish,
-                stop_event=stop,
-            )
-        except Exception as exc:  # noqa: BLE001
-            errors.append(str(exc))
+    def capture(staging_dir: Path):
+        stop = threading.Event()
+        errors = []
 
-    # The session code creates its own output directory, so only start
-    # the logger once the directory is created by the operation.
-    def begin():
-        output_dir.mkdir(parents=True, exist_ok=False)
+        def logger():
+            try:
+                run_clock_logger(
+                    output=staging_dir / "clock.jsonl",
+                    duration_s=24 * 3600,
+                    interval_s=interval,
+                    include_dish=include_dish,
+                    stop_event=stop,
+                )
+            except Exception as exc:  # noqa: BLE001
+                errors.append(str(exc))
+
         thread = threading.Thread(target=logger, daemon=True, name="clock-logger")
         thread.start()
-        return thread
+        try:
+            result = operation(staging_dir)
+        finally:
+            stop.set()
+            thread.join(timeout=15)
+            if thread.is_alive():
+                # Do not archive files which the clock worker might still modify.
+                raise RuntimeError("clock logger did not stop; session remains in RAM")
+        if errors:
+            raise RuntimeError(f"clock logging failed: {errors}")
+        return result
 
-    thread = begin()
-    try:
-        result = operation()
-    finally:
-        stop.set()
-        thread.join(timeout=12)
-    if errors:
-        raise RuntimeError(f"clock logging failed: {errors}")
-    return result
+    return run_session_storage(
+        output_dir, capture, mode=storage_mode
+    )
 
 
 def main() -> None:
@@ -370,10 +378,11 @@ def main() -> None:
     if args.cmd == "receive-speech":
         result = _with_clock_logging(
             args.output_dir, args.clock_interval, False,
-            lambda: receive_speech(
-                bind=args.bind, port=args.port, output_dir=args.output_dir,
+            lambda capture_dir: receive_speech(
+                bind=args.bind, port=args.port, output_dir=capture_dir,
                 buffer_ms=args.playout_buffer_ms,
             ),
+            storage_mode=args.storage_mode,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
@@ -381,9 +390,9 @@ def main() -> None:
     if args.cmd == "send-speech":
         result = _with_clock_logging(
             args.output_dir, args.clock_interval, True,
-            lambda: send_speech(
+            lambda capture_dir: send_speech(
                 target=args.target, input_wav=args.input,
-                output_dir=args.output_dir, policy=args.policy,
+                output_dir=capture_dir, policy=args.policy,
                 predictor=_predictor(args.predictor), bitrate=args.bitrate,
                 expected_loss_percent=args.expected_loss,
                 random_duty_cycle=args.random_duty_cycle, seed=args.seed,
@@ -391,6 +400,7 @@ def main() -> None:
                     int(token.strip()) for token in args.drop_sequences.split(",") if token.strip()
                 ),
             ),
+            storage_mode=args.storage_mode,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
