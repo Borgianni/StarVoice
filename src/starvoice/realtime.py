@@ -22,7 +22,7 @@ from .opus import OpusConfig, OpusDecoder, OpusEncoder, packet_has_fec
 from .predictor import PhaseModel
 from .probe import parse_target
 from .speech import _policy_fec
-from .storage import JsonlWriter, dump_json, environment_snapshot, utc_now_iso
+from .storage import AsyncJsonlWriter, JsonlWriter, dump_json, environment_snapshot, utc_now_iso
 
 MAGIC = b"SV02"
 KIND_START = 1
@@ -292,8 +292,8 @@ def receive_speech(
     final_at_ns = None
     duplicates = malformed = 0
     ended = False
-    previous_decision_log_write_ns = 0
-    packet_log_write_max_ns = 0
+    previous_decision_log_enqueue_ns = 0
+    packet_log_enqueue_max_ns = 0
     select_overshoot_max_ns = 0
     try:
         while True:
@@ -336,16 +336,16 @@ def receive_speech(
                         "actual_playout_mono_ns": wav_write_end_ns,
                         "decision": decision, "source_packet_sequence": repair_seq,
                         "startup_uncertain": next_playout < first_seq,
-                        "previous_decision_log_write_ns": previous_decision_log_write_ns,
-                        "packet_log_write_max_ns_since_previous_frame":
-                            packet_log_write_max_ns,
+                        "previous_decision_log_enqueue_ns": previous_decision_log_enqueue_ns,
+                        "packet_log_enqueue_max_ns_since_previous_frame":
+                            packet_log_enqueue_max_ns,
                         "select_overshoot_max_ns_since_previous_frame":
                             select_overshoot_max_ns,
                     }
                     log_start_ns = time.monotonic_ns()
                     writer_decisions.write(decision_log_row)
-                    previous_decision_log_write_ns = time.monotonic_ns() - log_start_ns
-                    packet_log_write_max_ns = 0
+                    previous_decision_log_enqueue_ns = time.monotonic_ns() - log_start_ns
+                    packet_log_enqueue_max_ns = 0
                     select_overshoot_max_ns = 0
                     next_playout += 1
 
@@ -388,8 +388,8 @@ def receive_speech(
                         peer = sender_addr
                         expected = metadata["frames"]
                         decoder = OpusDecoder(OpusConfig(bitrate=int(metadata["bitrate"])))
-                        writer_rx = JsonlWriter(output_dir / "receiver.jsonl")
-                        writer_decisions = JsonlWriter(output_dir / "frame-decisions.jsonl")
+                        writer_rx = AsyncJsonlWriter(output_dir / "receiver.jsonl")
+                        writer_decisions = AsyncJsonlWriter(output_dir / "frame-decisions.jsonl")
                         wav_out = wave.open(str(output_dir / "received.wav"), "wb")  # noqa: SIM115
                         wav_out.setnchannels(CHANNELS)
                         wav_out.setsampwidth(2)
@@ -433,11 +433,18 @@ def receive_speech(
                         "has_lbrr": packet_has_fec(p.payload),
                         "duplicate": duplicate,
                     })
-                    packet_log_write_max_ns = max(
-                        packet_log_write_max_ns,
+                    packet_log_enqueue_max_ns = max(
+                        packet_log_enqueue_max_ns,
                         time.monotonic_ns() - rx_log_start_ns,
                     )
 
+        # Flush and verify all queued JSONL rows before declaring the session valid.
+        writer_rx.close()
+        rx_log_stats = writer_rx.stats
+        writer_rx = None
+        writer_decisions.close()
+        decision_log_stats = writer_decisions.stats
+        writer_decisions = None
         summary = {
             "schema_version": 2, "session_id": str(session_id), "role": "receiver",
             "frames_expected": expected, "frames_decoded": next_playout,
@@ -448,6 +455,11 @@ def receive_speech(
             "unique_packets_observed": len(arrivals), "duplicate_packets": duplicates,
             "malformed_datagrams": malformed, "end_received": ended,
             "buffer_ms": buffer_ms, "endpoint": "receiver_relative_playout",
+            "jsonl_logging": {
+                "mode": "bounded_async",
+                "received_packets": rx_log_stats,
+                "frame_decisions": decision_log_stats,
+            },
             "note": "No absolute OWD claimed. Startup prefix is flagged separately.",
         }
         dump_json(output_dir / "summary.json", summary)
