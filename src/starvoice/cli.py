@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import threading
 from pathlib import Path
 
 from .actuation import run_fec_actuation_benchmark
@@ -70,11 +71,13 @@ def _parser() -> argparse.ArgumentParser:
     rx.add_argument("--port", type=int, default=5005)
     rx.add_argument("--playout-buffer-ms", type=float, default=60.0)
     rx.add_argument("--output-dir", type=Path, required=True)
+    rx.add_argument("--clock-interval", type=float, default=10.0)
 
     tx = sub.add_parser("send-speech")
     tx.add_argument("--target", required=True)
     tx.add_argument("--input", type=Path, required=True)
     tx.add_argument("--output-dir", type=Path, required=True)
+    tx.add_argument("--clock-interval", type=float, default=10.0)
     tx.add_argument(
         "--policy", choices=["plain", "always-fec", "predictive-fec", "random-fec"],
         default="plain",
@@ -296,6 +299,44 @@ def _predictor(path: Path | None) -> PhaseModel | None:
     return PhaseModel.load(path) if path else None
 
 
+def _with_clock_logging(output_dir: Path, interval: float, include_dish: bool, operation):
+    """Collect clock diagnostics concurrently with one real-time session."""
+    if interval <= 0:
+        raise ValueError("--clock-interval must be positive")
+    stop = threading.Event()
+    errors = []
+
+    def logger():
+        try:
+            run_clock_logger(
+                output=output_dir / "clock.jsonl",
+                duration_s=24 * 3600,
+                interval_s=interval,
+                include_dish=include_dish,
+                stop_event=stop,
+            )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(str(exc))
+
+    # The session code creates its own output directory, so only start
+    # the logger once the directory is created by the operation.
+    def begin():
+        output_dir.mkdir(parents=True, exist_ok=False)
+        thread = threading.Thread(target=logger, daemon=True, name="clock-logger")
+        thread.start()
+        return thread
+
+    thread = begin()
+    try:
+        result = operation()
+    finally:
+        stop.set()
+        thread.join(timeout=12)
+    if errors:
+        raise RuntimeError(f"clock logging failed: {errors}")
+    return result
+
+
 def main() -> None:
     args = _parser().parse_args()
     if args.cmd == "clock-log":
@@ -316,22 +357,28 @@ def main() -> None:
         return
 
     if args.cmd == "receive-speech":
-        result = receive_speech(
-            bind=args.bind, port=args.port, output_dir=args.output_dir,
-            buffer_ms=args.playout_buffer_ms,
+        result = _with_clock_logging(
+            args.output_dir, args.clock_interval, False,
+            lambda: receive_speech(
+                bind=args.bind, port=args.port, output_dir=args.output_dir,
+                buffer_ms=args.playout_buffer_ms,
+            ),
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
 
     if args.cmd == "send-speech":
-        result = send_speech(
-            target=args.target, input_wav=args.input,
-            output_dir=args.output_dir, policy=args.policy,
-            predictor=_predictor(args.predictor), bitrate=args.bitrate,
-            expected_loss_percent=args.expected_loss,
-            random_duty_cycle=args.random_duty_cycle, seed=args.seed,
-            drop_sequences=frozenset(
-                int(token.strip()) for token in args.drop_sequences.split(",") if token.strip()
+        result = _with_clock_logging(
+            args.output_dir, args.clock_interval, True,
+            lambda: send_speech(
+                target=args.target, input_wav=args.input,
+                output_dir=args.output_dir, policy=args.policy,
+                predictor=_predictor(args.predictor), bitrate=args.bitrate,
+                expected_loss_percent=args.expected_loss,
+                random_duty_cycle=args.random_duty_cycle, seed=args.seed,
+                drop_sequences=frozenset(
+                    int(token.strip()) for token in args.drop_sequences.split(",") if token.strip()
+                ),
             ),
         )
         print(json.dumps(result, indent=2, sort_keys=True))
