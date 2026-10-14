@@ -5,6 +5,7 @@ import json
 import subprocess
 import time
 from pathlib import Path
+from threading import Event
 
 from .storage import JsonlWriter, utc_now_iso
 
@@ -42,6 +43,7 @@ def clock_snapshot(include_dish: bool = True) -> dict:
 def run_clock_logger(
     output: Path, duration_s: float, interval_s: float = 10.0,
     include_dish: bool = True,
+    stop_event: Event | None = None,
 ) -> int:
     if duration_s <= 0 or interval_s <= 0:
         raise ValueError("duration and interval must be positive")
@@ -53,10 +55,16 @@ def run_clock_logger(
             now = time.monotonic()
             if now - start >= duration_s and samples:
                 break
+            if stop_event is not None and stop_event.is_set():
+                break
             writer.write(clock_snapshot(include_dish))
             samples += 1
             next_at = start + samples * interval_s
             if next_at >= start + duration_s:
                 break
-            time.sleep(max(0.0, next_at - time.monotonic()))
+            remaining = max(0.0, next_at - time.monotonic())
+            if stop_event is None:
+                time.sleep(remaining)
+            elif stop_event.wait(remaining):
+                break
     return samples
