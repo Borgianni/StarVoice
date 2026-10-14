@@ -77,6 +77,7 @@ def _parser() -> argparse.ArgumentParser:
     tx.add_argument("--expected-loss", type=int, default=20)
     tx.add_argument("--random-duty-cycle", type=float, default=0.1)
     tx.add_argument("--seed", type=int, default=2027)
+    tx.add_argument("--drop-sequences", default="", help="Comma-separated test-only UDP drops")
 
     q = sub.add_parser("probe")
     q.add_argument("--target", required=True)
@@ -315,6 +316,9 @@ def main() -> None:
             predictor=_predictor(args.predictor), bitrate=args.bitrate,
             expected_loss_percent=args.expected_loss,
             random_duty_cycle=args.random_duty_cycle, seed=args.seed,
+            drop_sequences=frozenset(
+                int(token.strip()) for token in args.drop_sequences.split(",") if token.strip()
+            ),
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return
