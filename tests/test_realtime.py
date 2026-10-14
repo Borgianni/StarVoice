@@ -108,6 +108,9 @@ def test_localhost_real_opus_realtime_receiver(tmp_path: Path):
         <= r["decode_end_mono_ns"] <= r["wav_write_end_mono_ns"]
         == r["actual_playout_mono_ns"] for r in rows
     )
+    assert all(r["previous_decision_log_write_ns"] >= 0 for r in rows)
+    assert all(r["packet_log_write_max_ns_since_previous_frame"] >= 0 for r in rows)
+    assert all(r["select_overshoot_max_ns_since_previous_frame"] >= 0 for r in rows)
     assert (receiver_output / "received.wav").exists()
 
 
