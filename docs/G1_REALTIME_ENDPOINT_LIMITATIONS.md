@@ -1,7 +1,8 @@
 # G1 Real-time Receiver: Endpoint, Timing, and Storage Limitations
 
-Status: experimental engineering validation on localhost. This does **not**
-authorize confirmatory Phase II claims or change the Phase I frozen definition.
+Status: G1 localhost transport, causal log audit, bounded asynchronous receiver logging,
+clock instrumentation and verified RAM-to-disk archival have passed on the NUC.
+This does **not** authorize confirmatory Phase II claims or change the Phase I frozen definition.
 
 ## Timing and causal endpoint
 
@@ -48,9 +49,28 @@ authorize confirmatory Phase II claims or change the Phase I frozen definition.
 - Output directories must be new and unique. Storage mode should be
   recorded as a measurement condition before any confirmatory run.
 
+## NUC validation record (2026-10-14, exploratory)
+
+- 60-s localhost automatic tmpfs capture and verified archival succeeded;
+  artifact: results/g1-ram-archive-20261014T182417Z.
+- Tests: 6 passed locally for RAM archival/clock integration;
+  sender archive 4 verified files and receiver archive 6 verified files.
+- 3,000 of 3,000 frames processed, valid causal log audit, 3,000 primary,
+  0 FEC and 0 PLC for the no-loss run. Receiver dispatch P99 0.208 ms,
+  max 3.401 ms and zero frames over 5 ms in this session.
+- Earlier disk-direct instrumentation found JSONL sink stalls as high as
+  ~37 ms; RAM capture improved dispatch timing. Single runs do not prove
+  universal absence of stalls, and no cross-machine OWD is measured.
+- Storage durability remains limited by tmpfs capacity and unclean
+  shutdowns before verified post-run archival.
+
 ## Next gates
 
-1. Validate the default automatic RAM-to-disk archival on the NUC.
-2. Confirm endpoint definitions and startup exclusions.
-3. Validate controlled drop and reorder, and loss/late/PLC accounting.
-   Only then consider cross-machine Starlink pilots.
+1. Automatic RAM-to-disk archival on the NUC: PASSED for one 60-s localhost run.
+2. Keep the receiver-local jitter-buffer endpoint distinct from the Phase I
+   RTT/2 proxy and from any absolute end-to-end 60-ms deadline. An amended,
+   frozen preregistration is required before confirmatory experiments.
+3. Validate controlled drop bursts, reordering, loss/late/PLC accounting and
+   startup exclusions beyond the existing single-drop real-LBRR unit test.
+4. Only then consider cross-machine Starlink pilot runs; do not equate
+   technically correct WAV reconstruction with audible QoE.
