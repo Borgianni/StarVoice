@@ -201,8 +201,10 @@ def send_speech(
                 if len(pcm) < frame_bytes:
                     pcm += b"\0" * (frame_bytes - len(pcm))
                 scheduled_ns = tick0 + seq * cfg.frame_ms * 1_000_000
-                while time.monotonic_ns() < scheduled_ns:
+                while True:
                     remaining_ns = scheduled_ns - time.monotonic_ns()
+                    if remaining_ns <= 0:
+                        break
                     time.sleep(min(remaining_ns / 1e9, 0.001))
                 decision_ns = time.monotonic_ns()
                 risk = predictor.risk(decision_ns) if predictor else 0.0
