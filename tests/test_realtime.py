@@ -29,7 +29,8 @@ def test_frame_selection_is_strictly_causal():
         0: Arrival(101, b"p0"),
         1: Arrival(99, b"lbrr"),
     }
-    lbrr = lambda payload: payload == b"lbrr"
+    def lbrr(payload):
+        return payload == b"lbrr"
     # A late primary is unusable. In-band repair is carried by the NEXT packet.
     assert choose_playout(0, 100, packets, lbrr) == ("fec", b"lbrr", 1)
     assert choose_playout(0, 98, packets, lbrr) == ("plc", None, None)
