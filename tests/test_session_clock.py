@@ -13,7 +13,7 @@ def test_session_clock_log_is_automatically_created(tmp_path, monkeypatch):
     output = tmp_path / "session"
     result = _with_clock_logging(
         output, 0.01, False,
-        lambda: (time.sleep(0.04), "completed")[1],
+        lambda capture_dir: (time.sleep(0.04), "completed")[1],
     )
 
     assert result == "completed"
@@ -22,3 +22,7 @@ def test_session_clock_log_is_automatically_created(tmp_path, monkeypatch):
     rows = [json.loads(line) for line in path.read_text().splitlines()]
     assert len(rows) >= 1
     assert all(row["dish_requested"] is False for row in rows)
+
+    archive = json.loads((output / "archive-integrity.json").read_text())
+    assert archive["schema_version"] == 1
+    assert "clock.jsonl" in archive["files"]
