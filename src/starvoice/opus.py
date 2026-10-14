@@ -90,6 +90,9 @@ def _lib() -> ctypes.CDLL:
         ctypes.c_int,
         ctypes.c_int,
     ]
+    # Every opus_encoder_ctl call in this wrapper supplies one integer value.
+    # Without argtypes, ctypes may truncate the 64-bit encoder pointer to c_int.
+    lib.opus_encoder_ctl.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
     lib.opus_encoder_ctl.restype = ctypes.c_int
     return lib
 
