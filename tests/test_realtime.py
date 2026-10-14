@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from starvoice.opus import OpusEncoder, OpusDecoder, OpusConfig, OpusUnavailable
+from starvoice.opus import OpusConfig, OpusDecoder, OpusEncoder, OpusUnavailable
 from starvoice.realtime import (
-    KIND_AUDIO, KIND_START, Arrival, WirePacket, choose_playout,
+    KIND_AUDIO, Arrival, WirePacket, choose_playout,
     decode_wire, encode_wire, playout_deadline_ns, receive_speech, send_speech,
 )
 
@@ -79,7 +79,7 @@ def test_localhost_real_opus_realtime_receiver(tmp_path: Path):
                 "127.0.0.1", port, receiver_output,
                 buffer_ms=60, idle_timeout_s=5, linger_ms=50, ready_event=ready
             ))
-        except Exception as ex:
+        except Exception as ex:  # noqa: BLE001
             errors.append(ex)
 
     thread = threading.Thread(target=target, daemon=True)
