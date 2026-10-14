@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import threading
 from pathlib import Path
 
 from .actuation import run_fec_actuation_benchmark
 from .campaign import execute_campaign
+from .clocklog import run_clock_logger
 from .causal_fusion import run_causal_fusion_experiment
 from .counterfactual import run_codec_counterfactual
 from .dataset import prepare_librispeech
@@ -24,6 +26,9 @@ from .observability import run_causal_observability_audit
 from .oracle import run_oracle_recovery_benchmark
 from .predictor import PhaseModel, calibrate_phase
 from .probe import run_probe, summarize
+from .realtime import receive_speech, send_speech
+from .session_analysis import analyze_session
+from .session_storage import run_session_storage
 from .qoe import run_stoi_evaluation
 from .relay import run_relay
 from .reactive import run_reactive_benchmark
@@ -52,10 +57,44 @@ def _parser() -> argparse.ArgumentParser:
 
     sub.add_parser("doctor")
 
+    audit = sub.add_parser("analyze-session")
+    audit.add_argument("--session-dir", type=Path, required=True)
+
+    clock = sub.add_parser("clock-log")
+    clock.add_argument("--output", type=Path, required=True)
+    clock.add_argument("--duration", type=float, default=60.0)
+    clock.add_argument("--interval", type=float, default=10.0)
+    clock.add_argument("--no-dish", action="store_true")
+
     r = sub.add_parser("relay")
     r.add_argument("--bind", default="0.0.0.0")
     r.add_argument("--port", type=int, default=5005)
     r.add_argument("--log", type=Path)
+
+    rx = sub.add_parser("receive-speech")
+    rx.add_argument("--bind", default="127.0.0.1")
+    rx.add_argument("--port", type=int, default=5005)
+    rx.add_argument("--playout-buffer-ms", type=float, default=60.0)
+    rx.add_argument("--output-dir", type=Path, required=True)
+    rx.add_argument("--clock-interval", type=float, default=10.0)
+    rx.add_argument("--storage-mode", choices=["ram", "direct"], default="ram")
+
+    tx = sub.add_parser("send-speech")
+    tx.add_argument("--target", required=True)
+    tx.add_argument("--input", type=Path, required=True)
+    tx.add_argument("--output-dir", type=Path, required=True)
+    tx.add_argument("--clock-interval", type=float, default=10.0)
+    tx.add_argument("--storage-mode", choices=["ram", "direct"], default="ram")
+    tx.add_argument(
+        "--policy", choices=["plain", "always-fec", "predictive-fec", "random-fec"],
+        default="plain",
+    )
+    tx.add_argument("--predictor", type=Path)
+    tx.add_argument("--bitrate", type=int, default=24000)
+    tx.add_argument("--expected-loss", type=int, default=20)
+    tx.add_argument("--random-duty-cycle", type=float, default=0.1)
+    tx.add_argument("--seed", type=int, default=2027)
+    tx.add_argument("--drop-sequences", default="", help="Comma-separated test-only UDP drops")
 
     q = sub.add_parser("probe")
     q.add_argument("--target", required=True)
@@ -267,8 +306,64 @@ def _predictor(path: Path | None) -> PhaseModel | None:
     return PhaseModel.load(path) if path else None
 
 
+def _with_clock_logging(
+    output_dir: Path, interval: float, include_dish: bool, operation,
+    storage_mode: str = "ram",
+):
+    """Log clock diagnostics during capture; archive only after all writers stop."""
+    if interval <= 0:
+        raise ValueError("--clock-interval must be positive")
+
+    def capture(staging_dir: Path):
+        stop = threading.Event()
+        errors = []
+
+        def logger():
+            try:
+                run_clock_logger(
+                    output=staging_dir / "clock.jsonl",
+                    duration_s=24 * 3600,
+                    interval_s=interval,
+                    include_dish=include_dish,
+                    stop_event=stop,
+                )
+            except Exception as exc:  # noqa: BLE001
+                errors.append(str(exc))
+
+        thread = threading.Thread(target=logger, daemon=True, name="clock-logger")
+        thread.start()
+        try:
+            result = operation(staging_dir)
+        finally:
+            stop.set()
+            # A writer may be inside a bounded NTP subprocess call.
+            # Never archive while it can still modify clock.jsonl.
+            thread.join()
+        if errors:
+            raise RuntimeError(f"clock logging failed: {errors}")
+        return result
+
+    return run_session_storage(
+        output_dir, capture, mode=storage_mode
+    )
+
+
 def main() -> None:
     args = _parser().parse_args()
+    if args.cmd == "analyze-session":
+        result = analyze_session(args.session_dir)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        if not result["valid"]:
+            raise SystemExit(1)
+        return
+
+    if args.cmd == "clock-log":
+        n = run_clock_logger(
+            args.output, args.duration, args.interval, include_dish=not args.no_dish
+        )
+        print(json.dumps({"samples": n, "output": str(args.output)}))
+        return
+
     if args.cmd == "doctor":
         checks = run_doctor()
         for c in checks:
@@ -277,6 +372,36 @@ def main() -> None:
 
     if args.cmd == "relay":
         run_relay(args.bind, args.port, args.log)
+        return
+
+    if args.cmd == "receive-speech":
+        result = _with_clock_logging(
+            args.output_dir, args.clock_interval, False,
+            lambda capture_dir: receive_speech(
+                bind=args.bind, port=args.port, output_dir=capture_dir,
+                buffer_ms=args.playout_buffer_ms,
+            ),
+            storage_mode=args.storage_mode,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.cmd == "send-speech":
+        result = _with_clock_logging(
+            args.output_dir, args.clock_interval, True,
+            lambda capture_dir: send_speech(
+                target=args.target, input_wav=args.input,
+                output_dir=capture_dir, policy=args.policy,
+                predictor=_predictor(args.predictor), bitrate=args.bitrate,
+                expected_loss_percent=args.expected_loss,
+                random_duty_cycle=args.random_duty_cycle, seed=args.seed,
+                drop_sequences=frozenset(
+                    int(token.strip()) for token in args.drop_sequences.split(",") if token.strip()
+                ),
+            ),
+            storage_mode=args.storage_mode,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
         return
 
     if args.cmd == "probe":

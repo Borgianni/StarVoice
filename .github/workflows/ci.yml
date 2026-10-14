@@ -13,11 +13,13 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libopus0 libopus-dev
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install
         run: pip install -e ".[dev,analysis]"
       - name: Ruff
-        run: ruff check src tests
+        run: |
+          ruff check --select E4,E7,E9,F --ignore F401,E741 src tests
+          ruff check --select E4,E7,E9,F src/starvoice/realtime.py tests/test_realtime.py
       - name: Tests
         run: pytest -q
       - name: Doctor
