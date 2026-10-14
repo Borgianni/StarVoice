@@ -54,6 +54,15 @@ def _timing_report(decisions: list[dict]) -> dict:
                 "wav_write_ms": round(
                     (row["wav_write_end_mono_ns"] - row["decode_end_mono_ns"]) / 1e6, 3
                 ) if instrumented else None,
+                "previous_decision_log_write_ms": round(
+                    row.get("previous_decision_log_write_ns", 0) / 1e6, 3
+                ) if "previous_decision_log_write_ns" in row else None,
+                "packet_log_write_max_ms": round(
+                    row.get("packet_log_write_max_ns_since_previous_frame", 0) / 1e6, 3
+                ) if "packet_log_write_max_ns_since_previous_frame" in row else None,
+                "select_overshoot_max_ms": round(
+                    row.get("select_overshoot_max_ns_since_previous_frame", 0) / 1e6, 3
+                ) if "select_overshoot_max_ns_since_previous_frame" in row else None,
             }
             for row in decisions
         ),
@@ -71,6 +80,17 @@ def _timing_report(decisions: list[dict]) -> dict:
         "dispatch_over_20ms": sum(value > 20 for value in dispatch),
         "decode_max_ms": round(max(decode), 3) if decode else None,
         "wav_write_max_ms": round(max(writing), 3) if writing else None,
+        "previous_decision_log_write_max_ms": round(
+            max(row.get("previous_decision_log_write_ns", 0) for row in decisions) / 1e6, 3
+        ) if instrumented else None,
+        "packet_log_write_max_ms": round(
+            max(row.get("packet_log_write_max_ns_since_previous_frame", 0)
+                for row in decisions) / 1e6, 3
+        ) if instrumented else None,
+        "select_overshoot_max_ms": round(
+            max(row.get("select_overshoot_max_ns_since_previous_frame", 0)
+                for row in decisions) / 1e6, 3
+        ) if instrumented else None,
         "worst_dispatch_frames": worst[:5],
         "note": (
             "Dispatch measured at receiver decision start, before Opus and WAV I/O."
