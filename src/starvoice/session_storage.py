@@ -20,6 +20,19 @@ def _hash(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _fsync_file(path: Path) -> None:
+    with path.open("rb") as handle:
+        os.fsync(handle.fileno())
+
+
+def _fsync_directory(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def archive_session(source: Path, destination: Path) -> None:
     """Copy to a hidden sibling, verify every file, then publish atomically.
 
@@ -45,6 +58,7 @@ def archive_session(source: Path, destination: Path) -> None:
             if not copied.is_file() or _hash(copied) != digest:
                 raise IOError(f"archive checksum mismatch: {relative}")
             entries[str(relative)] = {"bytes": file.stat().st_size, "sha256": digest}
+            _fsync_file(copied)
         manifest = {
             "schema_version": 1,
             "archival_method": "tmpfs-to-disk-verified-atomic-directory-rename",
@@ -53,9 +67,20 @@ def archive_session(source: Path, destination: Path) -> None:
         (partial / "archive-integrity.json").write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
+        _fsync_file(partial / "archive-integrity.json")
+        # Persist directories and metadata on the destination filesystem
+        # before publishing and deleting the tmpfs originals.
+        for directory in sorted(
+            (p for p in partial.rglob("*") if p.is_dir()),
+            key=lambda p: len(p.parts),
+            reverse=True,
+        ):
+            _fsync_directory(directory)
+        _fsync_directory(partial)
         if destination.exists():
             raise FileExistsError(f"session output appeared during archive: {destination}")
         os.rename(partial, destination)
+        _fsync_directory(destination.parent)
     except BaseException:
         shutil.rmtree(partial, ignore_errors=True)
         raise
