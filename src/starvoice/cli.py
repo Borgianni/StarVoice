@@ -27,6 +27,7 @@ from .oracle import run_oracle_recovery_benchmark
 from .predictor import PhaseModel, calibrate_phase
 from .probe import run_probe, summarize
 from .realtime import receive_speech, send_speech
+from .session_analysis import analyze_session
 from .qoe import run_stoi_evaluation
 from .relay import run_relay
 from .reactive import run_reactive_benchmark
@@ -54,6 +55,9 @@ def _parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("doctor")
+
+    audit = sub.add_parser("analyze-session")
+    audit.add_argument("--session-dir", type=Path, required=True)
 
     clock = sub.add_parser("clock-log")
     clock.add_argument("--output", type=Path, required=True)
@@ -339,6 +343,13 @@ def _with_clock_logging(output_dir: Path, interval: float, include_dish: bool, o
 
 def main() -> None:
     args = _parser().parse_args()
+    if args.cmd == "analyze-session":
+        result = analyze_session(args.session_dir)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        if not result["valid"]:
+            raise SystemExit(1)
+        return
+
     if args.cmd == "clock-log":
         n = run_clock_logger(
             args.output, args.duration, args.interval, include_dish=not args.no_dish
