@@ -10,6 +10,76 @@ def _rows(path: Path) -> list[dict]:
     return [json.loads(x) for x in path.read_text().splitlines() if x.strip()]
 
 
+def _timing_report(decisions: list[dict]) -> dict:
+    instrumented = bool(decisions) and all(
+        "decision_start_mono_ns" in row
+        and "decode_end_mono_ns" in row
+        and "wav_write_end_mono_ns" in row
+        for row in decisions
+    )
+    if instrumented:
+        dispatch = sorted(
+            (row["decision_start_mono_ns"] - row["scheduled_playout_mono_ns"]) / 1e6
+            for row in decisions
+        )
+        decode = [
+            (row["decode_end_mono_ns"] - row["decision_start_mono_ns"]) / 1e6
+            for row in decisions
+        ]
+        writing = [
+            (row["wav_write_end_mono_ns"] - row["decode_end_mono_ns"]) / 1e6
+            for row in decisions
+        ]
+    else:
+        dispatch = sorted(
+            (row["actual_playout_mono_ns"] - row["scheduled_playout_mono_ns"]) / 1e6
+            for row in decisions
+        )
+        decode = []
+        writing = []
+
+    worst = sorted(
+        (
+            {
+                "sequence": row["sequence"],
+                "dispatch_lateness_ms": round(
+                    (
+                        row.get("decision_start_mono_ns", row["actual_playout_mono_ns"])
+                        - row["scheduled_playout_mono_ns"]
+                    ) / 1e6, 3
+                ),
+                "decode_ms": round(
+                    (row["decode_end_mono_ns"] - row["decision_start_mono_ns"]) / 1e6, 3
+                ) if instrumented else None,
+                "wav_write_ms": round(
+                    (row["wav_write_end_mono_ns"] - row["decode_end_mono_ns"]) / 1e6, 3
+                ) if instrumented else None,
+            }
+            for row in decisions
+        ),
+        key=lambda x: x["dispatch_lateness_ms"], reverse=True,
+    )
+    if not dispatch:
+        return {"instrumented": instrumented}
+    n = len(dispatch)
+    return {
+        "instrumented": instrumented,
+        "dispatch_p95_ms": round(dispatch[min(n - 1, int(n * 0.95))], 3),
+        "dispatch_p99_ms": round(dispatch[min(n - 1, int(n * 0.99))], 3),
+        "dispatch_max_ms": round(dispatch[-1], 3),
+        "dispatch_over_5ms": sum(value > 5 for value in dispatch),
+        "dispatch_over_20ms": sum(value > 20 for value in dispatch),
+        "decode_max_ms": round(max(decode), 3) if decode else None,
+        "wav_write_max_ms": round(max(writing), 3) if writing else None,
+        "worst_dispatch_frames": worst[:5],
+        "note": (
+            "Dispatch measured at receiver decision start, before Opus and WAV I/O."
+            if instrumented else
+            "Legacy timing only: measured after Opus decoding and WAV I/O."
+        ),
+    }
+
+
 def analyze_session(root: Path) -> dict:
     tx, rx = root / "sender", root / "receiver"
     summary_tx = json.loads((tx / "summary.json").read_text())
@@ -34,15 +104,12 @@ def analyze_session(root: Path) -> dict:
         first_rx.setdefault(row["sequence"], row)
 
     counts = Counter()
-    scheduler_max_ms = 0.0
+    timing = _timing_report(decisions)
     for row in decisions:
         seq = row["sequence"]
         mode = row["decision"]
         counts[mode] += 1
         deadline = row["scheduled_playout_mono_ns"]
-        scheduler_max_ms = max(
-            scheduler_max_ms, (row["actual_playout_mono_ns"] - deadline) / 1e6,
-        )
         source = row["source_packet_sequence"]
         if mode == "plc":
             if source is not None:
@@ -74,7 +141,8 @@ def analyze_session(root: Path) -> dict:
         "valid": not errors, "errors": errors,
         "frames": count,
         "primary": counts["primary"], "fec": counts["fec"], "plc": counts["plc"],
-        "scheduler_max_lateness_ms": round(scheduler_max_ms, 3),
+        "scheduler_max_lateness_ms": timing.get("dispatch_max_ms"),
+        "timing": timing,
         "sender_clock_samples": len(clocks_tx),
         "receiver_clock_samples": len(clocks_rx),
         "observed_unique_packets": len(first_rx),
