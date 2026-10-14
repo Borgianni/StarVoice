@@ -1,4 +1,6 @@
 import json
+import math
+import struct
 import socket
 import threading
 import wave
@@ -6,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from starvoice.opus import OpusConfig, OpusDecoder, OpusEncoder, OpusUnavailable
+from starvoice.opus import OpusConfig, OpusDecoder, OpusEncoder, OpusUnavailable, packet_has_fec
 from starvoice.realtime import (
     KIND_AUDIO, Arrival, WirePacket, choose_playout,
     decode_wire, encode_wire, playout_deadline_ns, receive_speech, send_speech,
@@ -102,3 +104,90 @@ def test_localhost_real_opus_realtime_receiver(tmp_path: Path):
     assert [r["sequence"] for r in rows] == list(range(55))
     assert all(r["actual_playout_mono_ns"] >= r["scheduled_playout_mono_ns"] for r in rows)
     assert (receiver_output / "received.wav").exists()
+
+
+def test_real_fec_recovery_from_deliberate_drop(tmp_path: Path):
+    """Inject a loss at a frame known to have LBRR in the following Opus packet."""
+    cfg = OpusConfig()
+    try:
+        enc = OpusEncoder(cfg)
+    except OpusUnavailable:
+        pytest.skip("libopus unavailable")
+
+    samples = [
+        int(9500 * (0.5 + 0.5 * math.sin(2 * math.pi * 2.5 * i / 48000))
+            * (0.6 * math.sin(2 * math.pi * 155 * i / 48000)
+               + 0.25 * math.sin(2 * math.pi * 310 * i / 48000)))
+        for i in range(48000 * 3)
+    ]
+    wav_path = tmp_path / "voiced.wav"
+    with wave.open(str(wav_path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(48000)
+        wav.writeframes(struct.pack(f"<{len(samples)}h", *samples))
+
+    candidates = []
+    try:
+        for seq in range(len(samples) // cfg.frame_samples):
+            start = seq * cfg.frame_samples
+            frame = struct.pack(
+                f"<{cfg.frame_samples}h", *samples[start:start + cfg.frame_samples]
+            )
+            enc.set_fec(True, 20)
+            payload = enc.encode(frame)
+            if seq >= 10 and seq <= 140 and packet_has_fec(payload):
+                candidates.append(seq - 1)
+    finally:
+        enc.close()
+
+    if not candidates:
+        pytest.skip("libopus did not produce LBRR for this synthetic workload")
+
+    lost_sequence = candidates[0]
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reserve:
+        reserve.bind(("127.0.0.1", 0))
+        port = reserve.getsockname()[1]
+
+    ready = threading.Event()
+    receiver_output = tmp_path / "receiver"
+    errors = []
+    receiver_result = []
+
+    def target():
+        try:
+            receiver_result.append(receive_speech(
+                "127.0.0.1", port, receiver_output,
+                buffer_ms=60, idle_timeout_s=5, linger_ms=50, ready_event=ready,
+            ))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    assert ready.wait(2)
+
+    sender = send_speech(
+        f"127.0.0.1:{port}", wav_path, tmp_path / "sender",
+        policy="always-fec", drop_sequences=frozenset({lost_sequence}),
+    )
+    thread.join(timeout=6)
+    assert not thread.is_alive()
+    assert not errors, errors
+
+    records = [
+        json.loads(line)
+        for line in (receiver_output / "frame-decisions.jsonl").read_text().splitlines()
+    ]
+    selected = records[lost_sequence]
+    assert selected["sequence"] == lost_sequence
+    assert selected["decision"] == "fec", selected
+    assert selected["source_packet_sequence"] == lost_sequence + 1
+    assert receiver_result[0]["fec_frames"] >= 1
+    assert sender["injected_drops"] == 1
+    log = [
+        json.loads(line)
+        for line in (tmp_path / "sender" / "sender.jsonl").read_text().splitlines()
+    ]
+    assert log[lost_sequence]["injected_drop"]
+    assert log[lost_sequence + 1]["has_lbrr"]
