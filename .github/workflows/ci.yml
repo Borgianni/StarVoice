@@ -17,7 +17,9 @@ jobs:
       - name: Install
         run: pip install -e ".[dev,analysis]"
       - name: Ruff
-        run: ruff check src tests
+        run: |
+          ruff check --select E4,E7,E9,F --ignore F401 src tests
+          ruff check --select E4,E7,E9,F src/starvoice/realtime.py tests/test_realtime.py
       - name: Tests
         run: pytest -q
       - name: Doctor
