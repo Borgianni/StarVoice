@@ -153,7 +153,7 @@ def send_speech(
     host, port = parse_target(target)
     addr = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_DGRAM)[0][4]
     rng = random.Random(seed)
-    output_dir.mkdir(parents=True, exist_ok=False)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(0.2)
@@ -271,7 +271,7 @@ def receive_speech(
     """
     if not 0 <= buffer_ms <= 5000 or not 0 <= linger_ms <= 5000:
         raise ValueError("invalid timing parameters")
-    output_dir.mkdir(parents=True, exist_ok=False)
+    output_dir.mkdir(parents=True, exist_ok=True)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind((bind, port))
