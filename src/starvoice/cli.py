@@ -52,6 +52,7 @@ def _parser() -> argparse.ArgumentParser:
     rx.add_argument("--bind", default="127.0.0.1")
     rx.add_argument("--port", type=int, default=5005)
     rx.add_argument("--playout-buffer-ms", type=float, default=60.0)
+    rx.add_argument("--idle-timeout-s", type=float, default=600.0)
     rx.add_argument("--output-dir", type=Path, required=True)
     rx.add_argument("--clock-interval", type=float, default=10.0)
     rx.add_argument("--storage-mode", choices=["ram", "direct"], default="ram")
@@ -358,6 +359,7 @@ def main() -> None:
             lambda capture_dir: receive_speech(
                 bind=args.bind, port=args.port, output_dir=capture_dir,
                 buffer_ms=args.playout_buffer_ms,
+                idle_timeout_s=args.idle_timeout_s,
             ),
             storage_mode=args.storage_mode,
         )
