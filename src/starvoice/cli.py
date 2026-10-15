@@ -5,37 +5,14 @@ import json
 import threading
 from pathlib import Path
 
-from .actuation import run_fec_actuation_benchmark
-from .campaign import execute_campaign
 from .clocklog import run_clock_logger
-from .causal_fusion import run_causal_fusion_experiment
-from .counterfactual import run_codec_counterfactual
-from .dataset import prepare_librispeech
-from .deadline import run_deadline_analysis
-from .deadline_audio import run_deadline_audio_benchmark
-from .deadline_foresight import run_deadline_foresight_analysis
-from .deadline_gating import run_deadline_gating_analysis
-from .dnsmos import run_dnsmos_evaluation
-from .environment import run_doctor
-from .fec_cost import run_fec_cost_benchmark
-from .foresight import run_foresight_analysis
-from .evaluation import run_codec_benchmark
-from .montecarlo import run_random_fec_monte_carlo
-from .network_control import run_network_control_analysis
-from .observability import run_causal_observability_audit
-from .oracle import run_oracle_recovery_benchmark
 from .predictor import PhaseModel, calibrate_phase
 from .probe import run_probe, summarize
 from .realtime import receive_speech, send_speech
 from .session_analysis import analyze_session
 from .session_storage import run_session_storage
-from .qoe import run_stoi_evaluation
 from .relay import run_relay
-from .reactive import run_reactive_benchmark
-from .replay import replay_speech
-from .report import build_report
 from .speech import speech_loop
-from .wer import run_wer_evaluation
 
 
 POLICIES = ["plain", "always-fec", "random-fec", "predictive-fec", "reactive-fec"]
@@ -365,6 +342,7 @@ def main() -> None:
         return
 
     if args.cmd == "doctor":
+        from .environment import run_doctor
         checks = run_doctor()
         for c in checks:
             print(f"{'OK' if c.ok else 'FAIL':4} {c.name:20} {c.detail}")
@@ -416,6 +394,7 @@ def main() -> None:
         return
 
     if args.cmd == "dataset" and args.dataset_cmd == "prepare-librispeech":
+        from .dataset import prepare_librispeech
         result = prepare_librispeech(
             root=args.root,
             output=args.output,
@@ -427,6 +406,7 @@ def main() -> None:
         return
 
     if args.cmd == "benchmark-codec":
+        from .evaluation import run_codec_benchmark
         result = run_codec_benchmark(
             manifest=args.manifest,
             calibration_trace=args.calibration_trace,
@@ -444,6 +424,7 @@ def main() -> None:
         return
 
     if args.cmd == "benchmark-reactive":
+        from .reactive import run_reactive_benchmark
         result = run_reactive_benchmark(
             benchmark_results=args.benchmark_results,
             manifest=args.manifest,
@@ -459,6 +440,7 @@ def main() -> None:
         return
 
     if args.cmd == "monte-carlo-random-fec":
+        from .montecarlo import run_random_fec_monte_carlo
         result = run_random_fec_monte_carlo(
             benchmark_results=args.benchmark_results,
             manifest=args.manifest,
@@ -472,6 +454,7 @@ def main() -> None:
         return
 
     if args.cmd == "evaluate-codec-counterfactual":
+        from .counterfactual import run_codec_counterfactual
         result = run_codec_counterfactual(
             benchmark_results=args.benchmark_results,
             reactive_results=args.reactive_results,
@@ -485,6 +468,7 @@ def main() -> None:
         return
 
     if args.cmd == "evaluate-stoi":
+        from .qoe import run_stoi_evaluation
         result = run_stoi_evaluation(
             benchmark_results=args.benchmark_results,
             reactive_results=args.reactive_results,
@@ -496,6 +480,7 @@ def main() -> None:
         return
 
     if args.cmd == "benchmark-fec-actuation":
+        from .actuation import run_fec_actuation_benchmark
         result = run_fec_actuation_benchmark(
             benchmark_results=args.benchmark_results,
             manifest=args.manifest,
@@ -507,6 +492,7 @@ def main() -> None:
         return
 
     if args.cmd == "benchmark-oracle":
+        from .oracle import run_oracle_recovery_benchmark
         result = run_oracle_recovery_benchmark(
             benchmark_results=args.benchmark_results,
             manifest=args.manifest,
@@ -518,6 +504,7 @@ def main() -> None:
         return
 
     if args.cmd == "benchmark-deadline-audio":
+        from .deadline_audio import run_deadline_audio_benchmark
         result = run_deadline_audio_benchmark(
             benchmark_results=args.benchmark_results,
             reactive_results=args.reactive_results,
@@ -533,6 +520,7 @@ def main() -> None:
         return
 
     if args.cmd == "analyze-deadlines":
+        from .deadline import run_deadline_analysis
         kwargs = {}
         if args.playout_ms:
             kwargs["playout_ms"] = tuple(args.playout_ms)
@@ -547,6 +535,7 @@ def main() -> None:
         return
 
     if args.cmd == "analyze-deadline-gating":
+        from .deadline_gating import run_deadline_gating_analysis
         kwargs = {}
         if args.playout_ms:
             kwargs["playout_ms"] = tuple(args.playout_ms)
@@ -562,6 +551,7 @@ def main() -> None:
         return
 
     if args.cmd == "analyze-deadline-foresight":
+        from .deadline_foresight import run_deadline_foresight_analysis
         kwargs = {}
         if args.playout_ms:
             kwargs["playout_ms"] = tuple(args.playout_ms)
@@ -576,6 +566,7 @@ def main() -> None:
         return
 
     if args.cmd == "analyze-causal-fusion":
+        from .causal_fusion import run_causal_fusion_experiment
         result = run_causal_fusion_experiment(
             calibration_trace=args.calibration_trace,
             benchmark_results=args.benchmark_results,
@@ -590,6 +581,7 @@ def main() -> None:
         return
 
     if args.cmd == "analyze-observability":
+        from .observability import run_causal_observability_audit
         result = run_causal_observability_audit(
             benchmark_results=args.benchmark_results,
             output=args.output,
@@ -601,6 +593,7 @@ def main() -> None:
         return
 
     if args.cmd == "analyze-foresight":
+        from .foresight import run_foresight_analysis
         result = run_foresight_analysis(
             benchmark_results=args.benchmark_results,
             output=args.output,
@@ -609,6 +602,7 @@ def main() -> None:
         return
 
     if args.cmd == "benchmark-fec-cost":
+        from .fec_cost import run_fec_cost_benchmark
         result = run_fec_cost_benchmark(
             manifest=args.manifest,
             output=args.output,
@@ -622,6 +616,7 @@ def main() -> None:
         return
 
     if args.cmd == "evaluate-dnsmos":
+        from .dnsmos import run_dnsmos_evaluation
         result = run_dnsmos_evaluation(
             benchmark_results=args.benchmark_results,
             reactive_results=args.reactive_results,
@@ -634,6 +629,7 @@ def main() -> None:
         return
 
     if args.cmd == "evaluate-wer":
+        from .wer import run_wer_evaluation
         result = run_wer_evaluation(
             benchmark_results=args.benchmark_results,
             reactive_results=args.reactive_results,
@@ -667,6 +663,7 @@ def main() -> None:
         return
 
     if args.cmd == "replay-speech":
+        from .replay import replay_speech
         result = replay_speech(
             input_wav=args.input,
             output_wav=args.output,
@@ -683,11 +680,13 @@ def main() -> None:
         return
 
     if args.cmd == "run":
+        from .campaign import execute_campaign
         result = execute_campaign(args.campaign, args.target, args.site, args.output_root)
         print(result.campaign_dir)
         return
 
     if args.cmd == "analyze-network-controls":
+        from .network_control import run_network_control_analysis
         result = run_network_control_analysis(
             traces=args.trace,
             output=args.output,
@@ -701,6 +700,7 @@ def main() -> None:
         return
 
     if args.cmd == "report":
+        from .report import build_report
         print(build_report(args.run_dir))
         return
 
