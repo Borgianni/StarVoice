@@ -27,6 +27,7 @@ args = parser.parse_args(
      "--output-dir", "/tmp/test-rx"]
 )
 assert args.cmd == "receive-speech"
+assert args.idle_timeout_s == 600.0
 print("MINIMAL_CLI_OK")
 """
     result = subprocess.run(
