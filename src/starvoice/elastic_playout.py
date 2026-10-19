@@ -88,16 +88,34 @@ def render_policy(
     first_seq: int,
     budgets: list[int],
     bitrate: int,
+    *,
+    decision_budgets: list[int] | None = None,
 ) -> dict:
     """Decode fixed receiver-local arrivals, write actual elastic PCM WAV.
 
     All potential byte changes are on the *previous* frame so that the
     first sample of frame seq occurs exactly at the planned D_seq modulo the
     receiver-local anchor; no future packet is read by the edit itself.
+
+    decision_budgets is a strictly diagnostic override for disaggregating
+    *packet-decision* benefit from *physical edit* cost. Mismatching these two
+    schedules can be NONPHYSICAL and MUST NOT be reported as a viable receiver.
     """
     n = len(packets)
     if len(budgets) != n or any(not BASE_MS <= v <= 80 for v in budgets):
         raise ValueError("expected a complete <=80ms playout-budget schedule")
+    # The physical playout schedule must be feasible at the sample-clock
+    # boundary; validate *before* creating an output WAV.
+    if any(abs(right - left) > 1 for left, right in zip(budgets, budgets[1:])):
+        raise ValueError("physical buffer change exceeds 1ms per frame")
+    # Only diagnostic ablations may differ between decision and actual budgets:
+    # a rescue-only schedule is NONPHYSICAL and cannot be reported as a player.
+    if decision_budgets is None:
+        decision_budgets = budgets
+    if len(decision_budgets) != n or any(
+        not BASE_MS <= v <= 80 for v in decision_budgets
+    ):
+        raise ValueError("invalid packet-decision budget schedule")
     if first_seq not in arrivals:
         raise ValueError("first receiver packet is missing")
     first_ns = int(arrivals[first_seq]["receive_mono_ns"])
@@ -114,7 +132,7 @@ def render_policy(
             wav.setsampwidth(2)
             wav.setframerate(SAMPLE_RATE)
             for seq in range(n):
-                due_ns = first_ns + (seq - first_seq) * FRAME_MS * 1_000_000 + budgets[seq] * 1_000_000
+                due_ns = first_ns + (seq - first_seq) * FRAME_MS * 1_000_000 + decision_budgets[seq] * 1_000_000
                 # Frames before first packet are startup-uncertain and always PLC.
                 decision, packet_seq = (
                     select_packet(seq, due_ns, arrivals)
