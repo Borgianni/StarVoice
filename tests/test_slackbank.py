@@ -52,6 +52,30 @@ def test_causal_training_and_slew_limited_phase_schedule():
     assert causal["max_budget_ms"] == 80
 
 
+def test_phase_consensus_uses_observed_center_with_small_jitter():
+    arrivals = synthetic_arrivals(n=TRAIN_FRAMES, phase=424)
+    for epoch in range(TRAIN_FRAMES // 750):
+        old = epoch * 750 + 424
+        for seq in (old, old + 1):
+            arrivals[seq]["receive_mono_ns"] = arrivals[seq]["sender_mono_ns_uncomparable"]
+        shifted = old + (-1, 0, 1, 0)[epoch % 4]
+        arrivals[shifted]["receive_mono_ns"] += 70_000_000
+    phase, support = calibrate_phase(arrivals)
+    assert phase == 424
+    assert support == 8
+
+
+def test_no_receiver_gaps_returns_no_phase():
+    arrivals = {
+        seq: {
+            "sender_mono_ns_uncomparable": seq * 20_000_000,
+            "receive_mono_ns": seq * 20_000_000,
+        }
+        for seq in range(TRAIN_FRAMES)
+    }
+    assert calibrate_phase(arrivals) == (None, 0)
+
+
 def test_post_training_arrivals_do_not_change_phase_or_schedule():
     arrivals = synthetic_arrivals()
     phase, _ = calibrate_phase(arrivals)
