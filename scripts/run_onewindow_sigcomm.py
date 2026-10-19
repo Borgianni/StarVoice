@@ -42,7 +42,7 @@ def atomic_json(path: Path, obj: dict) -> None:
     os.replace(temp, path)
 
 
-def prepare_segments(deployment: Path, out: Path) -> list[dict]:
+def prepare_segments(deployment: Path, out: Path, segment_seconds: int = 600) -> list[dict]:
     """Split frozen 30-minute LibriSpeech manifest into 3 complete-utterance WAVs."""
     manifest = deployment / "datasets/starvoice-eval-v1/manifest.jsonl"
     rows = [json.loads(x) for x in manifest.read_text(encoding="utf-8").splitlines() if x.strip()]
@@ -60,7 +60,7 @@ def prepare_segments(deployment: Path, out: Path) -> list[dict]:
                 wav.getcomptype()) != (48000, 1, 2, "NONE"):
                 raise ValueError(f"not 48k/mono/PCM16: {src}")
             n = wav.getnframes()
-        if segment < 2 and cumulative >= (segment + 1) * 600 * 48000:
+        if segment < 2 and cumulative >= (segment + 1) * segment_seconds * 48000:
             segment += 1
         segments[segment]["items"].append({"id": row["utterance_id"], "wav": str(src),
                                            "sha256": row["wav_sha256"], "samples": n})
