@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 import os
+import signal
 import shlex
 import subprocess
 import time
@@ -280,6 +281,13 @@ def run(args) -> None:
     }
     atomic_json(campaign / "campaign-manifest.json", manifest)
     clock0 = time.monotonic()
+    previous_alarm_handler = signal.getsignal(signal.SIGALRM)
+
+    def _hard_stop(_signum, _frame):
+        raise TimeoutError("hard 114-minute acquisition deadline reached")
+
+    signal.signal(signal.SIGALRM, _hard_stop)
+    signal.setitimer(signal.ITIMER_REAL, MAX_WALL_SECONDS)
     try:
         for index, segment_id in enumerate(ORDER):
             sec = segments[segment_id]["duration_s"]
@@ -305,6 +313,9 @@ def run(args) -> None:
         atomic_json(campaign / "campaign-manifest.json", manifest)
         print(f"STOP: {exc}; completed block artifacts retained at {campaign}", flush=True)
         raise
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_alarm_handler)
     manifest["status"] = "complete"
     manifest["finished_utc"] = datetime.now(timezone.utc).isoformat()
     atomic_json(campaign / "campaign-manifest.json", manifest)
