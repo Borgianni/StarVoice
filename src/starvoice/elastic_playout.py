@@ -36,7 +36,7 @@ def stretch_frame(pcm: bytes, delta_samples: int) -> bytes:
     not production WSOLA and not validated for perceptual transparency.
     """
     if len(pcm) != SAMPLES_PER_FRAME * 2:
-        raise ValueError("expected one mono PCM16 20ms frame")
+        raise ValueError(f"expected 960 mono PCM16 samples (20ms), got {len(pcm)} bytes")
     if delta_samples not in (-SAMPLES_PER_MS, 0, SAMPLES_PER_MS):
         raise ValueError("only +/-1ms output changes per 20ms frame are supported")
     if delta_samples == 0:
