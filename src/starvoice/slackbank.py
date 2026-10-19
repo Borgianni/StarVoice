@@ -53,7 +53,6 @@ def calibrate_phase(arrivals: dict[int, dict], training_frames: int = TRAIN_FRAM
     sender and receiver monotonic clocks.
     """
     gap_phases = []
-    seen = set()
     for seq in range(1, training_frames):
         last = arrivals.get(seq - 1)
         current = arrivals.get(seq)
@@ -72,7 +71,6 @@ def calibrate_phase(arrivals: dict[int, dict], training_frames: int = TRAIN_FRAM
         epoch = seq // PERIOD_FRAMES
         phase = seq % PERIOD_FRAMES
         # One candidate per epoch: largest excess receiver gap.
-        previous = seen
         gap_phases.append((epoch, phase, rx_gap_ms - tx_gap_ms))
 
     by_epoch = {}
@@ -88,7 +86,23 @@ def calibrate_phase(arrivals: dict[int, dict], training_frames: int = TRAIN_FRAM
         delta = (a - b) % PERIOD_FRAMES
         return min(delta, PERIOD_FRAMES - delta) <= 2
 
-    best_phase = max(range(PERIOD_FRAMES), key=lambda i: sum(close(x, i) for x in phases))
+    def phase_distance(a: int, b: int) -> int:
+        delta = (a - b) % PERIOD_FRAMES
+        return min(delta, PERIOD_FRAMES - delta)
+
+    # Candidate centres must themselves be observed, never invented by the
+    # +/-2-frame tolerance. At equal match count pick the circular medoid,
+    # which favours the centre of observed gaps over the earliest matching
+    # phase (the old range(750) search erroneously returned 422 for 424).
+    best_phase = max(
+        set(phases),
+        key=lambda candidate: (
+            sum(close(x, candidate) for x in phases),
+            -sum(phase_distance(x, candidate) for x in phases),
+            phases.count(candidate),
+            -candidate,
+        ),
+    )
     matches = sum(close(x, best_phase) for x in phases)
     if matches < 4 or matches / len(phases) < 0.5:
         return None, matches
