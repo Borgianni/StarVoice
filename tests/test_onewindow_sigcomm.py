@@ -11,6 +11,12 @@ campaign = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(campaign)
 
 
+def test_research_commit_resolves_worktree_root():
+    sha = campaign.research_commit()
+    assert len(sha) == 40
+    assert all(ch in "0123456789abcdef" for ch in sha)
+
+
 def test_nine_block_design_is_counterbalanced():
     assert len(campaign.ORDER) == 9
     assert [Counter(campaign.ORDER[i:i + 3]) for i in (0, 3, 6)] == [
