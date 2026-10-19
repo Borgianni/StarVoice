@@ -210,8 +210,13 @@ def acquire(args, campaign: Path, block_index: int, segment: dict, seconds: floa
     if not audit["valid"] or audit["errors"]:
         raise RuntimeError(f"causal audit failed on {prefix}: {audit['errors']}")
 
-    feasibility, _events = analyze(block, (40, 50, 60, 80, 100))
+    feasibility, events = analyze(block, (40, 50, 60, 80, 100))
     atomic_json(block / "recoverability.json", feasibility)
+    if events:
+        with (block / "failure-events.csv").open("w", newline="", encoding="utf-8") as dst:
+            w = csv.DictWriter(dst, fieldnames=list(events[0]))
+            w.writeheader()
+            w.writerows(events)
     recorded = next(b for b in feasibility["budgets"] if b["buffer_ms"] == 60)
     if recorded["observed_decision_disagreements_at_recorded_buffer"]:
         raise RuntimeError(f"recoverability audit mismatch on {prefix}")
@@ -311,6 +316,36 @@ def run(args) -> None:
         writer.writeheader()
         for block in manifest["blocks"]:
             writer.writerow({k: block.get(k) for k in columns})
+    frontier_cols = [
+        "block", "buffer_ms", "frames_analyzed", "primary_failures",
+        "eligible_lbrr_upper_bound", "modeled_plc", "modeled_primary",
+        "modeled_fec", "primary_not_observed", "primary_receiver_observed_late",
+        "carrier_not_observed", "carrier_receiver_observed_late",
+        "carrier_timely_without_lbrr", "carrier_timely_with_lbrr",
+    ]
+    frontier_rows = []
+    aggregates = {}
+    for item in manifest["blocks"]:
+        report = json.loads(
+            (campaign / item["block"] / "recoverability.json").read_text(encoding="utf-8")
+        )
+        for budget in report["budgets"]:
+            values = budget["counts"]
+            row = {"block": item["block"], "buffer_ms": budget["buffer_ms"]}
+            row.update({key: values.get(key, 0) for key in frontier_cols[2:]})
+            frontier_rows.append(row)
+            tally = aggregates.setdefault(budget["buffer_ms"], {k: 0 for k in frontier_cols[2:]})
+            for key in frontier_cols[2:]:
+                tally[key] += row[key]
+    with (campaign / "frontier-by-block.csv").open("w", newline="", encoding="utf-8") as dst:
+        writer = csv.DictWriter(dst, fieldnames=frontier_cols)
+        writer.writeheader()
+        writer.writerows(frontier_rows)
+    with (campaign / "frontier-total.csv").open("w", newline="", encoding="utf-8") as dst:
+        writer = csv.DictWriter(dst, fieldnames=frontier_cols[1:])
+        writer.writeheader()
+        for budget, values in sorted(aggregates.items()):
+            writer.writerow({"buffer_ms": budget, **values})
     print(f"CAMPAIGN COMPLETE: {campaign}", flush=True)
     print(f"Block results: {campaign/'blocks.csv'}", flush=True)
     print("WARNING: nine contiguous blocks are not independent days or external-site validation.")
