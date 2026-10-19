@@ -97,6 +97,12 @@ def call(cmd: list[str], *, cwd: Path | None = None, timeout: float = 30) -> str
     return p.stdout.strip()
 
 
+def research_commit() -> str:
+    """Read the Git HEAD of this script's repository (also in a git worktree)."""
+    root = Path(__file__).resolve().parents[1]
+    return call(["git", "rev-parse", "HEAD"], cwd=root)
+
+
 def ssh_prefix(args) -> list[str]:
     return ["ssh", "-i", str(args.ssh_key), "-o", "IdentitiesOnly=yes",
             "-o", "BatchMode=yes", "-o", "ConnectTimeout=12",
@@ -271,8 +277,7 @@ def run(args) -> None:
                    "no direct comparison between simultaneously observed alternative policies"],
         "started_utc": datetime.now(timezone.utc).isoformat(),
         "deployed_nuc_sha": local_sha, "deployed_oracle_sha": oracle_sha,
-        "research_sha": call(["git", "rev-parse", "HEAD"],
-                             cwd=Path(__file__).resolve().parents[2]),
+        "research_sha": research_commit(),
         "sender_policy": "always-fec", "injected_drops": 0,
         "codec": {"frame_ms": 20, "bitrate": 24000, "expected_loss_percent": 20},
         "buffer_recorded_ms": 60, "sensitivity_buffers_ms": [40, 50, 60, 80, 100],
