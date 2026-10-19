@@ -46,6 +46,7 @@ def test_causal_training_and_slew_limited_phase_schedule():
 
     assert fixed60["plc"] > 0
     assert causal["plc"] < fixed60["plc"]
+    assert causal["plc"] == 0
     assert control["plc"] >= causal["plc"]
     assert causal["plc"] == fixed80["plc"]
     assert causal["average_extra_budget_ms"] < 2
@@ -74,6 +75,27 @@ def test_no_receiver_gaps_returns_no_phase():
         for seq in range(TRAIN_FRAMES)
     }
     assert calibrate_phase(arrivals) == (None, 0)
+
+
+def test_zero_event_classes_are_preserved_in_output():
+    # A perfect reception is a valid and important scientific observation.
+    # Zero PLC/FEC must not disappear from reports and crash the CLI.
+    n = TRAIN_FRAMES + 120
+    arrivals = {
+        seq: {
+            "sequence": seq,
+            "sender_mono_ns_uncomparable": seq * 20_000_000,
+            "receive_mono_ns": seq * 20_000_000,
+            "has_lbrr": False,
+        }
+        for seq in range(n)
+    }
+    result = evaluate(n, 0, arrivals, [BASE_MS] * n)
+    assert result["frames"] == 120
+    assert result["primary"] == 120
+    assert result["primary_failures"] == 0
+    assert result["fec"] == 0
+    assert result["plc"] == 0
 
 
 def test_post_training_arrivals_do_not_change_phase_or_schedule():
