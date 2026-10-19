@@ -53,7 +53,7 @@ def test_rtpdump_preserves_arrival_not_sequence_order(tmp_path, monkeypatch):
     assert record["observed_rtp_packets"] == 3
     assert record["unobserved_rtp_packets"] == 1
     assert not record["original_opus_packet_bytes_retained"]
-    assert not record["external_native_neteq_executed"] if "external_native_neteq_executed" in record else True
+    assert record["exact_original_packet_byte_identity_unproven"]
 
 
 def test_receiver_wraps_rtp_sequence_and_timestamp(tmp_path, monkeypatch):
