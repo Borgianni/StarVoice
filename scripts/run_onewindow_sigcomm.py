@@ -256,8 +256,10 @@ def run(args) -> None:
           f"(plus transfer/audit overhead), hard start gate <114 minutes", flush=True)
     if planned > 104 * 60:
         raise RuntimeError("workload too long to fit safe 114-minute campaign limit")
+    route = call(["ip", "route", "get", args.oracle_target.rsplit(":", 1)[0]])
     manifest = {
         "schema_version": 1, "purpose": "exploratory_onewindow_recoverability_feasibility",
+        "nuc_route_to_oracle_at_start": route,
         "single_window_not_independent_days": True,
         "limits": ["one site", "one day", "receiver-relative deadline",
                    "no direct comparison between simultaneously observed alternative policies"],
