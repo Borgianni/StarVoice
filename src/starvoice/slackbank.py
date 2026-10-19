@@ -143,7 +143,10 @@ def ramp_targets(n: int, phase: int | None, start: int = TRAIN_FRAMES) -> list[i
 
 def evaluate(n: int, first_seq: int, arrivals: dict[int, dict], schedule: list[int]) -> dict:
     first_ns = int(arrivals[first_seq]["receive_mono_ns"])
-    total = Counter()
+    # Include all count categories even when a policy produces zero events.
+    # Counter omits absent keys from dict(total), which previously made an
+    # entirely successful playout policy crash the reports with KeyError('plc').
+    total = Counter({"primary": 0, "primary_failures": 0, "fec": 0, "plc": 0, "frames": 0})
     extra = 0
     changed = 0
     max_delay = BASE_MS
