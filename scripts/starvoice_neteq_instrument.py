@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import statistics
@@ -229,9 +230,17 @@ def main():
     exe, pristine = install(webrtc, output)
     build_log = output / "native_incremental_build.log"
     print("Building instrumented native NetEQ; original binary preserved:", pristine, flush=True)
+    # SSH noninteractive sessions often omit Chromium's depot_tools from PATH.
+    depot_tools = webrtc.parents[1] / "depot_tools"
+    env = os.environ.copy()
+    env["PATH"] = str(depot_tools) + os.pathsep + env.get("PATH", "")
+    builder = shutil.which("autoninja", path=env["PATH"]) or shutil.which("ninja", path=env["PATH"])
+    if builder is None:
+        raise RuntimeError("Neither autoninja nor ninja found in PATH/depot_tools: " + str(depot_tools))
+    print("Build tool:", builder, flush=True)
     with build_log.open("w") as f:
-        r = subprocess.run(["ninja", "-C", str(webrtc / "out/StarVoice"), "neteq_rtpplay"],
-                           stdout=f, stderr=subprocess.STDOUT, check=False)
+        r = subprocess.run([builder, "-C", str(webrtc / "out/StarVoice"), "neteq_rtpplay"],
+                           env=env, stdout=f, stderr=subprocess.STDOUT, check=False)
     if r.returncode:
         raise RuntimeError(f"Native incremental build failed: {build_log}")
     if digest(exe) == BASE_BINARY_SHA:
